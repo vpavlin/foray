@@ -3,15 +3,15 @@
     "name": "Foray",
     "slug": "foray",
     "scheme": "foray",
-    "version": "0.1.8",
+    "version": "0.1.9",
     "platforms": [
       "android"
     ],
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "android": {
       "package": "xyz.vpavlin.foray",
-      "versionCode": 9,
+      "versionCode": 10,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#3D7A57"
@@ -42,6 +42,7 @@
       ],
       "expo-background-task",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "backgroundColor": "#0b0d0f"
   }
 }
