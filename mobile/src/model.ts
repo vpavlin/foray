@@ -1,5 +1,6 @@
 // What the app shows and when it notifies, as pure functions of the service's data (docs/api.md).
 // No React, no network: tested in test/model.test.ts.
+import { stripMarkdown } from "./md.ts";
 
 export type State = "suggested" | "inbox" | "open" | "waiting" | "done" | "dropped";
 
@@ -124,12 +125,12 @@ export function notesFromChanges(list: ListInfo, events: Change[], seen: Set<str
     if (e.op === "comment" && list.session) {
       const last = (it.comments || [])[(it.comments || []).length - 1];
       if (last && (last.by === list.session || last.by.endsWith("/" + list.session)))
-        add({ key: `q:${list.name}:${it.id}:${last.at}`, title: `${it.title}`, body: `The assistant asks: ${last.text}`, list: list.name, item: it.id });
+        add({ key: `q:${list.name}:${it.id}:${last.at}`, title: `${it.title}`, body: `The assistant asks: ${stripMarkdown(last.text)}`, list: list.name, item: it.id });
     }
     for (const h of it.help || []) {
       if (h.state === "completed")
         add({ key: `h:${list.name}:${it.id}:${h.task || h.kind}`, title: `Help is back: ${it.title}`,
-              body: (h.answer || "").slice(0, 200) || `The ${h.kind} you asked for is done.`, list: list.name, item: it.id });
+              body: stripMarkdown(h.answer || "").slice(0, 200) || `The ${h.kind} you asked for is done.`, list: list.name, item: it.id });
     }
     if (e.op === "add" && me && e.by !== me && !e.item.suggested_by)
       add({ key: `a:${list.name}:${it.id}`, title: `New on ${list.title}`, body: it.title, list: list.name, item: it.id });

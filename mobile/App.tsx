@@ -8,6 +8,8 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as Notifications from "expo-notifications";
+import * as Clipboard from "expo-clipboard";
+import { parseMarkdown, stripMarkdown, Inline, Block } from "./src/md";
 import { api, ApiError } from "./src/api";
 import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
@@ -323,7 +325,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
             ].filter(Boolean);
             return bits.length ? <Text style={[s.sub, !done && (b === "overdue" || b === "today") && { color: C.warn }]} numberOfLines={1}>{bits.join(" · ")}</Text> : null;
           })()}
-          {asked && !done && <Text style={[s.sub, { color: C.blue }]} numberOfLines={1}>The assistant asked: {lastC!.text}</Text>}
+          {asked && !done && <Text style={[s.sub, { color: C.blue }]} numberOfLines={1}>The assistant asked: {stripMarkdown(lastC!.text)}</Text>}
         </View>
       </Pressable>
     );
@@ -467,6 +469,50 @@ function AboutUs({ base, list, ctx, me, readOnly, onClose, onSaved, onReadOnly }
   );
 }
 
+// ── markdown from the assistant and other agents (src/md.ts decides what's safe) ─
+function inlineNodes(xs: Inline[], key = ""): React.ReactNode[] {
+  return xs.map((x, i) => {
+    const k = key + "." + i;
+    switch (x.t) {
+      case "text": return x.s;
+      case "b": return <Text key={k} style={{ fontWeight: "700" }}>{inlineNodes(x.c, k)}</Text>;
+      case "i": return <Text key={k} style={{ fontStyle: "italic" }}>{inlineNodes(x.c, k)}</Text>;
+      case "code": return <Text key={k} style={s.mdCode}>{x.s}</Text>;
+      case "link": return <Text key={k} style={s.mdLink} onPress={() => { Linking.openURL(x.url).catch(() => {}); }}>{inlineNodes(x.c, k)}</Text>;
+    }
+  });
+}
+function Markdown({ text }: { text: string }) {
+  const blocks = useMemo(() => parseMarkdown(text), [text]);
+  const one = (b: Block, i: number) => {
+    switch (b.t) {
+      case "p": return <Text key={i} style={s.body} selectable>{inlineNodes(b.c)}</Text>;
+      case "h": return <Text key={i} style={[s.body, { fontWeight: "700", fontSize: b.level <= 1 ? 18 : b.level === 2 ? 16 : 15 }]} selectable>{inlineNodes(b.c)}</Text>;
+      case "quote": return <View key={i} style={s.mdQuote}><Text style={[s.body, { color: C.sub }]} selectable>{inlineNodes(b.c)}</Text></View>;
+      case "code": return <View key={i} style={s.mdPre}><Text style={s.mdPreT} selectable>{b.s}</Text></View>;
+      case "ul": case "ol": return (
+        <View key={i} style={{ gap: 3 }}>
+          {b.items.map((it, j) => (
+            <View key={j} style={{ flexDirection: "row", gap: 6 }}>
+              <Text style={[s.body, { minWidth: b.t === "ol" ? 20 : 10 }]}>{b.t === "ol" ? `${b.start + j}.` : "•"}</Text>
+              <Text style={[s.body, { flex: 1 }]} selectable>{inlineNodes(it)}</Text>
+            </View>
+          ))}
+        </View>
+      );
+    }
+  };
+  return <View style={{ gap: 6 }}>{blocks.map(one)}</View>;
+}
+// Copies the text as written, markdown and all: a draft is meant for pasting.
+function CopyLink({ text }: { text: string }) {
+  return (
+    <Pressable hitSlop={6} onPress={() => { Clipboard.setStringAsync(text).then(() => toast("Copied")).catch(() => {}); }} style={{ marginTop: 4 }}>
+      <Text style={{ fontSize: 12, color: C.accent }}>Copy</Text>
+    </Pressable>
+  );
+}
+
 // ── one item ─────────────────────────────────────────────────────────────────
 const STATES: { s: State; label: string }[] = [
   { s: "open", label: "To do" }, { s: "waiting", label: "Waiting" }, { s: "done", label: "Done" }, { s: "dropped", label: "Not doing" },
@@ -592,7 +638,8 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
             <View key={(h.task || "") + i} style={s.card}>
               <Text style={s.body}>{cap(h.kind)}{h.ask ? `: ${h.ask}` : ""}</Text>
               <Text style={[s.sub, h.state === "completed" && { color: C.accent }]}>{h.state === "completed" ? "Done" : h.state === "failed" ? "Couldn't be done" : "Working on it…"}</Text>
-              {!!h.answer && <Text style={[s.body, { marginTop: 6 }]} selectable>{h.answer}</Text>}
+              {!!h.answer && <View style={{ marginTop: 6 }}><Markdown text={h.answer} /></View>}
+              {!!h.answer && <CopyLink text={h.answer} />}
             </View>
           ))}
           {!readOnly && !!list.session && (
@@ -619,7 +666,8 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
             return (
               <View key={i} style={[s.bubble, mine ? s.bubbleMine : bot ? s.bubbleBot : null]}>
                 <Text style={s.bubbleWho}>{cap(whoLabel(c.by, list.session, me))}</Text>
-                <Text style={s.body} selectable>{c.text}</Text>
+                {/* Agents write markdown; people's own notes are shown as typed. */}
+                {mine || (!bot && !c.by.includes("/")) ? <Text style={s.body} selectable>{c.text}</Text> : <><Markdown text={c.text} /><CopyLink text={c.text} /></>}
               </View>
             );
           })}
@@ -667,5 +715,10 @@ const s = StyleSheet.create({
   bubble: { backgroundColor: C.card, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: C.line, maxWidth: "88%", alignSelf: "flex-start" },
   bubbleMine: { alignSelf: "flex-end", backgroundColor: C.accentSoft, borderColor: C.accentSoft },
   bubbleBot: { backgroundColor: "#EAF1F7", borderColor: "#EAF1F7" },
+  mdCode: { fontFamily: "monospace", backgroundColor: "#ECEEE9", fontSize: 13 },
+  mdLink: { color: C.blue, textDecorationLine: "underline" },
+  mdQuote: { borderLeftWidth: 3, borderLeftColor: C.line, paddingLeft: 10 },
+  mdPre: { backgroundColor: "#ECEEE9", borderRadius: 8, padding: 10 },
+  mdPreT: { fontFamily: "monospace", fontSize: 13, color: C.text },
   bubbleWho: { fontSize: 11, color: C.sub, marginBottom: 2, fontWeight: "600" },
 });
