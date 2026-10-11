@@ -38,6 +38,20 @@ It installs the binary and the service, writes the list's config, prepares
 gives pi the list's tools, and creates the `foray-home` session limited to the
 home mesh. Run it again any time; it changes only what differs.
 
+## More lists
+
+A machine keeps as many lists as you like: run setup again with another name,
+for each its own session, its own context ("about us") and its own browser
+(about 2.8 GB):
+
+```
+scripts/setup.sh --list office --mesh default --title Office --suggest-from laptop/shrooms
+```
+
+A list is on one mesh, and everybody on that mesh sees it — so two lists for
+two groups of people go on two meshes; two lists for the same people can
+share one.
+
 ## Before anybody else joins the home mesh
 
 Every agent session on a machine that is on the home mesh is visible from it
