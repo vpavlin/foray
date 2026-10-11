@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { hasContext, isQuestion, dueBucket, dueLabel, sections, applyChanges, whoLabel, notesFromChanges, dueTodayNotes, baseUrl } from "../src/model.ts";
+import { arrange, needsYou, hasContext, isQuestion, dueBucket, dueLabel, sections, applyChanges, whoLabel, notesFromChanges, dueTodayNotes, baseUrl } from "../src/model.ts";
 import type { Item, ListInfo, Change } from "../src/model.ts";
 
 const now = new Date(2026, 9, 11, 14, 0);   // Sun 11 Oct 2026, 14:00 local
@@ -76,5 +76,39 @@ assert.equal(isQuestion("Shrnutí doplněno: dvě garáže mají v sobotu otevř
 assert.equal(isQuestion("Why? Because it's cheaper."), false, "a question mark in the middle doesn't make it a question");
 const noteEv = [{ seq: 1, at: "", by: "foray-home", op: "comment", item: it("u", "open", { title: "tires", comments: [{ by: "foray-home", at: "9", text: "Shrnutí doplněno." }] }) }];
 assert.equal(notesFromChanges(list, noteEv as Change[], new Set())[0].body, "The assistant: Shrnutí doplněno.");
+
+// arrange: needs-you first, groups, sorts
+{
+  const q = (by: string, text: string) => ({ comments: [{ by, at: "1", text }] });
+  const xs: Item[] = [
+    it("a", "open", { title: "Banana", due: "2026-10-20", updated: "2026-10-01", created: "2026-09-01", who: "Anna", tags: ["food", "shop"] }),
+    it("b", "open", { title: "apple", updated: "2026-10-05", created: "2026-09-05" }),
+    it("c", "open", { title: "Cherry", due: "2026-10-12", updated: "2026-10-02", created: "2026-09-02", who: "Václav", tags: ["food"] }),
+    it("d", "waiting", { title: "Dentist", ...q("foray-home", "Which day suits you?") }),
+    it("e", "inbox", { title: "Eggs", ...q("foray-home", "Shrnutí doplněno.") }),
+    it("f", "done", { title: "Fig", updated: "2026-10-09" }),
+    it("g", "dropped", { title: "Grapes", updated: "2026-10-10" }),
+    it("h", "suggested", { title: "Honey" }),
+    it("i", "done", { title: "Ice", ...q("foray-home", "Done?") }),
+  ];
+  const ids = (l: Item[]) => l.map((x) => x.id);
+  let r = arrange(xs, "foray-home", "due", "state");
+  assert.deepEqual(ids(r.needs), ["d"], "a session question on an active item; not a note, not a done item");
+  assert.deepEqual(r.groups.map((g) => g.title), ["New", "To do"], "Waiting is empty once d moved to Needs you");
+  assert.deepEqual(ids(r.groups[1].items), ["c", "a", "b"], "due soonest, undated last");
+  assert.deepEqual(ids(r.done), ["g", "f", "i"]);
+  assert.deepEqual(ids(r.suggested), ["h"]);
+  assert.equal(needsYou(xs[3], ""), false, "no session, nobody asks");
+  r = arrange(xs, "foray-home", "az", "none");
+  assert.deepEqual(r.groups.map((g) => g.title), ["To do"]);
+  assert.deepEqual(ids(r.groups[0].items), ["b", "a", "c", "e"], "A–Z ignores case");
+  r = arrange(xs, "foray-home", "newest", "who");
+  assert.deepEqual(r.groups.map((g) => g.title), ["Anna", "Václav", "Anyone"]);
+  assert.deepEqual(ids(r.groups[2].items), ["b", "e"], "Anyone last; newest = latest created first, none last");
+  r = arrange(xs, "foray-home", "changed", "tag");
+  assert.deepEqual(r.groups.map((g) => g.title), ["#food", "#shop", "No tag"]);
+  assert.deepEqual(ids(r.groups[0].items), ["c", "a"], "an item with two tags is under both; changed = newest update first");
+  assert.deepEqual(ids(r.groups[1].items), ["a"]);
+}
 
 console.log("MODEL OK");

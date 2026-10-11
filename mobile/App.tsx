@@ -14,7 +14,7 @@ import { api, ApiError } from "./src/api";
 import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
 import { registerBackground } from "./src/background";
-import { Item, ListInfo, ListContext, State, sections, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, HELP_KINDS, baseUrl } from "./src/model";
+import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl } from "./src/model";
 
 const C = {
   bg: "#F4F5F1", card: "#FFFFFF", text: "#1E2320", sub: "#67706A", faint: "#9AA29C", line: "#E2E5DF",
@@ -298,7 +298,12 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   };
   const toggleDone = (it: Item) => guard(() => api.patch(base, info.name, it.id, { state: it.state === "done" ? "open" : "done" }), it.state === "done" ? "Back on the list" : "Done");
 
-  const sec = useMemo(() => sections(items), [items]);
+  // Sort and group: each device remembers its own choice.
+  const [view, setView] = useState<{ sort: SortBy; group: GroupBy }>({ sort: "due", group: "state" });
+  const [viewOpen, setViewOpen] = useState(false);
+  useEffect(() => { store.view().then((v) => { if (v) setView(v); }); }, []);
+  const pickView = (v: { sort: SortBy; group: GroupBy }) => { setView(v); store.setView(v); };
+  const sec = useMemo(() => arrange(items, list.session, view.sort, view.group), [items, list.session, view]);
   const now = new Date();
   const selected = items.find((x) => x.id === sel) || null;
   useBack(() => { if (!selected && !aboutOpen) onBack(); });
@@ -333,9 +338,9 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
       </Pressable>
     );
   };
-  const Section = ({ title, list: xs }: { title: string; list: Item[] }) => xs.length ? (
+  const Section = ({ title, list: xs, tone }: { title: string; list: Item[]; tone?: string }) => xs.length ? (
     <View style={{ gap: 6 }}>
-      <Text style={s.groupLabel}>{title}</Text>
+      <Text style={[s.groupLabel, tone ? { color: tone } : null]}>{title}{xs.length > 1 ? ` · ${xs.length}` : ""}</Text>
       <View style={s.card0}>{xs.map((it, i) => <View key={it.id} style={i > 0 && s.sep}><Row it={it} /></View>)}</View>
     </View>
   ) : null;
@@ -357,7 +362,9 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
             <Text style={{ fontSize: 13, color: hasContext(ctx) ? C.blue : C.warn }}>{hasContext(ctx) ? "About us" : "Tell the assistant about you"}</Text>
           </Pressable>
         </View>
-        <View style={{ width: 50 }} />
+        <Pressable hitSlop={10} onPress={() => setViewOpen(true)} style={{ width: 50, alignItems: "flex-end" }}>
+          <Text style={[s.headerLink, { fontSize: 20 }]} accessibilityLabel="Sort and group">⇅</Text>
+        </Pressable>
       </View>
       {!readOnly && (
         <View style={s.addBar}>
@@ -379,12 +386,11 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
             </View>
           </View>
         ))}
-        {loaded && !error && sec.open.length + sec.waiting.length + sec.inbox.length === 0 && (
+        {loaded && !error && sec.needs.length === 0 && sec.groups.length === 0 && (
           <Text style={[s.sub, { textAlign: "center", marginTop: 20 }]}>Nothing to do. Add something above.</Text>
         )}
-        <Section title="To do" list={sec.open} />
-        <Section title="Waiting" list={sec.waiting} />
-        <Section title="New" list={sec.inbox} />
+        <Section title="Needs you" list={sec.needs} tone={C.blue} />
+        {sec.groups.map((g) => <Section key={g.key} title={g.title} list={g.items} />)}
         {sec.suggested.length > 0 && (
           <Pressable onPress={() => setShowSuggested(!showSuggested)}><Text style={s.fold}>{showSuggested ? "Hide" : "Show"} suggestions ({sec.suggested.length})</Text></Pressable>
         )}
@@ -394,6 +400,26 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
         )}
         {showDone && <Section title="Done" list={sec.done} />}
       </ScrollView>
+      <Modal visible={viewOpen} transparent animationType="fade" onRequestClose={() => setViewOpen(false)}>
+        <Pressable style={s.sheetBackdrop} onPress={() => setViewOpen(false)}>
+          <Pressable style={s.sheet} onPress={() => {}}>
+            <Text style={s.label}>Sort by</Text>
+            <View style={s.chips}>{SORTS.map((o) => (
+              <Pressable key={o.v} style={[s.chip, view.sort === o.v && { backgroundColor: C.accent, borderColor: C.accent }]} onPress={() => pickView({ ...view, sort: o.v })}>
+                <Text style={[s.chipT, view.sort === o.v && { color: "#fff" }]}>{o.label}</Text>
+              </Pressable>
+            ))}</View>
+            <Text style={s.label}>Group by</Text>
+            <View style={s.chips}>{GROUPS.map((o) => (
+              <Pressable key={o.v} style={[s.chip, view.group === o.v && { backgroundColor: C.accent, borderColor: C.accent }]} onPress={() => pickView({ ...view, group: o.v })}>
+                <Text style={[s.chipT, view.group === o.v && { color: "#fff" }]}>{o.label}</Text>
+              </Pressable>
+            ))}</View>
+            <Text style={[s.hint, { marginTop: 10 }]}>What the assistant is waiting on you for always comes first. This phone remembers your choice.</Text>
+            <Pressable onPress={() => setViewOpen(false)} style={[s.primaryBtn, { marginTop: 12 }]}><Text style={s.primaryBtnT}>Done</Text></Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -764,6 +790,8 @@ const s = StyleSheet.create({
   bubble: { backgroundColor: C.card, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: C.line, maxWidth: "88%", alignSelf: "flex-start" },
   bubbleMine: { alignSelf: "flex-end", backgroundColor: C.accentSoft, borderColor: C.accentSoft },
   bubbleBot: { backgroundColor: "#EAF1F7", borderColor: "#EAF1F7" },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(20,25,22,0.35)", justifyContent: "flex-end" },
+  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 18, paddingBottom: 28, gap: 8 },
   mdCode: { fontFamily: "monospace", backgroundColor: "#ECEEE9", fontSize: 13 },
   mdLink: { color: C.blue, textDecorationLine: "underline" },
   mdQuote: { borderLeftWidth: 3, borderLeftColor: C.line, paddingLeft: 10 },
