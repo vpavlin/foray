@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { dueBucket, dueLabel, sections, applyChanges, whoLabel, notesFromChanges, dueTodayNotes, baseUrl } from "../src/model.ts";
+import { hasContext, dueBucket, dueLabel, sections, applyChanges, whoLabel, notesFromChanges, dueTodayNotes, baseUrl } from "../src/model.ts";
 import type { Item, ListInfo, Change } from "../src/model.ts";
 
 const now = new Date(2026, 9, 11, 14, 0);   // Sun 11 Oct 2026, 14:00 local
@@ -64,5 +64,9 @@ assert.equal(baseUrl("fdb0:9afc::1", 7389), "http://[fdb0:9afc::1]:7389");
 assert.equal(baseUrl("[fdb0::1]:7390", 7389), "http://[fdb0::1]:7390");
 assert.equal(baseUrl("jimmy-crib.office.mesh", 7389), "http://jimmy-crib.office.mesh:7389");
 assert.equal(baseUrl("http://10.0.0.2:8000/", 7389), "http://10.0.0.2:8000");
+
+assert.equal(hasContext(null), false);
+assert.equal(hasContext({ place: "  ", notes: "" , by: "x", updated: "t" }), false, "by/updated alone isn't content");
+assert.equal(hasContext({ currency: "CZK" }), true);
 
 console.log("MODEL OK");

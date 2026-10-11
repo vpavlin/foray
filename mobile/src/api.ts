@@ -1,6 +1,6 @@
 // The Foray service's HTTP API (docs/api.md). Every call has a timeout: a computer that is off or
 // off-mesh must never leave the app spinning.
-import type { Item, ListInfo, Change } from "./model";
+import type { Item, ListInfo, Change, ListContext } from "./model";
 
 export class ApiError extends Error {
   status: number;
@@ -37,7 +37,10 @@ export interface WhoAmI { name: string; mesh: string; local: boolean; can_write:
 export const api = {
   whoami: (b: string) => req<WhoAmI>(b, "/v1/whoami", {}, 5000),
   lists: (b: string) => req<{ machine: string; lists: ListInfo[] }>(b, "/v1/lists", {}, 5000),
-  list: (b: string, l: string) => req<{ list: ListInfo; items: Item[]; asks?: { from: string; title: string; at: string }[]; suggest_from?: string[] }>(b, `/v1/lists/${enc(l)}`),
+  context: (b: string, l: string) => req<ListContext>(b, `/v1/lists/${enc(l)}/context`),
+  setContext: (b: string, l: string, c: { place: string; language: string; currency: string; notes: string }) =>
+    req<ListContext>(b, `/v1/lists/${enc(l)}/context`, { method: "PUT", body: c }),
+  list: (b: string, l: string) => req<{ list: ListInfo; items: Item[]; context?: ListContext; asks?: { from: string; title: string; at: string }[]; suggest_from?: string[] }>(b, `/v1/lists/${enc(l)}`),
   changes: (b: string, l: string, since: number) => req<{ seq: number; events: Change[]; reset?: boolean }>(b, `/v1/lists/${enc(l)}/changes?since=${since}`),
   add: (b: string, l: string, body: { title: string; notes?: string; due?: string; who?: string; tags?: string[]; state?: string }) =>
     req<Item>(b, `/v1/lists/${enc(l)}/items`, { method: "POST", body }),
