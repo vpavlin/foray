@@ -64,6 +64,7 @@ type Args struct {
 	States   string   `json:"states"`
 	Title    *string  `json:"title"`
 	Notes    *string  `json:"notes"`
+	Summary  *string  `json:"summary"`
 	State    *string  `json:"state"`
 	Due      *string  `json:"due"`
 	Who      *string  `json:"who"`
@@ -184,7 +185,7 @@ func (c Client) Call(tool string, a Args) (string, error) {
 		return c.item("POST", "/items", n)
 	case "update_item":
 		p := map[string]any{}
-		for k, v := range map[string]*string{"title": a.Title, "notes": a.Notes, "due": a.Due, "who": a.Who, "state": a.State} {
+		for k, v := range map[string]*string{"title": a.Title, "notes": a.Notes, "summary": a.Summary, "due": a.Due, "who": a.Who, "state": a.State} {
 			if v != nil {
 				p[k] = *v
 			}
@@ -313,8 +314,10 @@ var Tools = []map[string]any{
 	tool("add_item", "Add an item yourself (one the people asked you for in conversation). Agents' suggestions arrive on their own, as state suggested.",
 		props{"title": str(""), "notes": str(""), "due": str("2006-01-02, or 2006-01-02T15:04:05+02:00"), "who": str("who it is for"),
 			"tags": arr("tags"), "state": str("open by default")}, "title"),
-	tool("update_item", "Change an item: title, notes, state, due, who, tags. Only the fields given change.",
-		props{"id": str(""), "title": str(""), "notes": str(""), "state": str(""), "due": str(""), "who": str(""), "tags": arr("")}, "id"),
+	tool("update_item", "Change an item: title, notes, summary, state, due, who, tags. Only the fields given change. Notes are the people's: leave them unless asked.",
+		props{"id": str(""), "title": str(""), "notes": str("the people's own notes"),
+			"summary": str("what is known about the item, in markdown: the gist, the facts that matter, links to act on, sources. Replaces the whole summary: keep what is still true, including anything a person wrote"),
+			"state": str(""), "due": str(""), "who": str(""), "tags": arr("")}, "id"),
 	tool("comment", "Say something on an item — a question for the people, or what you found. They see it in the app and their answers come back to you.",
 		props{"id": str(""), "text": str("")}, "id", "text"),
 	tool("record_help", "Record help asked of another agent for an item, and its progress: call it when you send the task (state working) and again with the answer.",

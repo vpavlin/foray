@@ -350,10 +350,16 @@ func (s *Server) update(w http.ResponseWriter, r *http.Request, l *list, by stri
 	if !decode(w, r, &p) {
 		return
 	}
+	before, _ := l.store.Get(r.PathValue("id"))
 	it, err := l.store.Update(by, r.PathValue("id"), p)
 	if err != nil {
 		fail(w, http.StatusBadRequest, err)
 		return
+	}
+	// A person's correction to the summary is the session's to keep.
+	if it.Summary != before.Summary {
+		s.tell(l, by, fmt.Sprintf("[foray %s] %s edited the summary of %q (item %s): keep what they changed when you update it.",
+			l.conf.Name, by, it.Title, it.ID))
 	}
 	writeJSON(w, http.StatusOK, it)
 }

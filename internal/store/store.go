@@ -42,9 +42,15 @@ func ValidState(s string) bool { return states[s] }
 
 // Item is one thing to do.
 type Item struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Notes       string    `json:"notes,omitempty"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Notes string `json:"notes,omitempty"`
+	// Summary is what is known about the item, in markdown: the gist, the
+	// facts that matter, the links to act on and the sources. The session
+	// writes and keeps it current; people may edit it, and SummaryBy says
+	// who changed it last.
+	Summary     string    `json:"summary,omitempty"`
+	SummaryBy   string    `json:"summary_by,omitempty"`
 	State       string    `json:"state"`
 	Due         string    `json:"due,omitempty"` // 2006-01-02, or RFC 3339 with a time
 	Who         string    `json:"who,omitempty"`
@@ -102,6 +108,9 @@ type Context struct {
 	By       string    `json:"by,omitempty"`
 	Updated  time.Time `json:"updated,omitzero"`
 }
+
+// MaxSummary bounds an item's summary: a page, not a report.
+const MaxSummary = 8000
 
 // MaxNotes bounds the context's notes: it goes into every request the
 // session makes, and a cheap model reads all of it.
@@ -283,6 +292,7 @@ func (l *List) Add(by string, n New) (Item, error) {
 type Patch struct {
 	Title    *string   `json:"title"`
 	Notes    *string   `json:"notes"`
+	Summary  *string   `json:"summary"`
 	State    *string   `json:"state"`
 	Due      *string   `json:"due"`
 	Who      *string   `json:"who"`
@@ -308,6 +318,15 @@ func (l *List) Update(by, id string, p Patch) (Item, error) {
 	}
 	if p.Notes != nil {
 		it.Notes = strings.TrimSpace(*p.Notes)
+	}
+	if p.Summary != nil {
+		sum := strings.TrimSpace(*p.Summary)
+		if len(sum) > MaxSummary {
+			return Item{}, fmt.Errorf("the summary is longer than %d characters", MaxSummary)
+		}
+		if sum != it.Summary {
+			it.Summary, it.SummaryBy = sum, by
+		}
 	}
 	if p.State != nil {
 		if !ValidState(*p.State) {

@@ -304,3 +304,25 @@ func TestAnalyzeLeavesItToTheSession(t *testing.T) {
 		t.Fatalf("find out: %v", told)
 	}
 }
+
+// A person editing the summary is news to the session; the session's own
+// summary is not.
+func TestASummaryEditReachesTheSession(t *testing.T) {
+	f := newFixture(t)
+	_, it := f.call(t, f.home, "POST", "/v1/lists/home/items", store.New{Title: "Makerfair"}, nil)
+	f.told()
+	id := it["id"].(string)
+	f.call(t, f.local, "PATCH", "/v1/lists/home/items/"+id, map[string]string{"summary": "**Sat 17 Oct**"},
+		map[string]string{AsHeader: "foray-home"})
+	time.Sleep(50 * time.Millisecond)
+	if told := f.told(); len(told) != 0 {
+		t.Fatalf("the session was told about its own summary: %v", told)
+	}
+	code, got := f.call(t, f.home, "PATCH", "/v1/lists/home/items/"+id, map[string]string{"summary": "**Sun 18 Oct**"}, nil)
+	if code != 200 || got["summary_by"] != "phone.home" {
+		t.Fatalf("edit: %d %v", code, got)
+	}
+	if told := f.told(); len(told) != 1 || !strings.Contains(told[0], "edited the summary") {
+		t.Fatalf("the session was told: %v", told)
+	}
+}

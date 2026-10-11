@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"os"
 	"path/filepath"
 	"testing"
@@ -167,5 +168,24 @@ func TestTheContextIsKeptAndIsNotAChange(t *testing.T) {
 		if e.Op == "context" {
 			t.Fatal("the context came back as a change")
 		}
+	}
+}
+
+// The summary is kept with who changed it last, and only a change moves that.
+func TestTheSummaryKnowsWhoWroteIt(t *testing.T) {
+	l, _ := open(t)
+	a, _ := l.Add("phone.home", New{Title: "Makerfair"})
+	sum := "**Sat 17 Oct**, [tickets](https://makerfaire.cz/brno)"
+	it, err := l.Update("foray-home", a.ID, Patch{Summary: &sum})
+	if err != nil || it.Summary != sum || it.SummaryBy != "foray-home" {
+		t.Fatalf("set: %+v %v", it, err)
+	}
+	title := "Makerfair Brno"
+	if it, _ = l.Update("phone.home", a.ID, Patch{Title: &title, Summary: &sum}); it.SummaryBy != "foray-home" {
+		t.Fatalf("an unchanged summary changed hands: %+v", it)
+	}
+	long := strings.Repeat("x", MaxSummary+1)
+	if _, err := l.Update("foray-home", a.ID, Patch{Summary: &long}); err == nil {
+		t.Fatal("a summary past the limit was kept")
 	}
 }

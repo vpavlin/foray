@@ -528,6 +528,58 @@ Item {
                         color: cAsh; font.pixelSize: 11
                     }
 
+                    // The summary: what is known, kept by the assistant,
+                    // rendered; "edit" shows the markdown to change.
+                    Rectangle {
+                        id: summaryBox
+                        Layout.fillWidth: true
+                        property bool editing: false
+                        visible: !!detail.it.summary || editing
+                        implicitHeight: summaryCol.implicitHeight + 16
+                        radius: 8; color: cRaised; border.color: cLine
+                        Connections {
+                            target: detail
+                            function onItChanged() { summaryBox.editing = false }
+                        }
+                        ColumnLayout {
+                            id: summaryCol
+                            anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                            anchors.margins: 8
+                            spacing: 6
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "summary" + (detail.it.summary_by ? " · " + root.byText(detail.it.summary_by) : ""); color: cAsh; font.pixelSize: 11 }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    text: summaryBox.editing ? "cancel" : "edit"; color: cSky; font.pixelSize: 11
+                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                onClicked: { summaryEdit.text = detail.it.summary || ""; summaryBox.editing = !summaryBox.editing } }
+                                }
+                                Text {
+                                    visible: summaryBox.editing; text: "save"; color: cPhosphor; font.pixelSize: 11; Layout.leftMargin: 10
+                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                onClicked: if (root.write("PATCH", "/items/" + detail.it.id, { summary: summaryEdit.text })) summaryBox.editing = false }
+                                }
+                            }
+                            MdText { visible: !summaryBox.editing; source: detail.it.summary || ""; Layout.fillWidth: true }
+                            TextArea {
+                                id: summaryEdit
+                                visible: summaryBox.editing
+                                Layout.fillWidth: true
+                                wrapMode: TextEdit.Wrap; selectByMouse: true
+                                color: cBone; font.pixelSize: 12; font.family: "monospace"
+                                background: Rectangle { color: cPanel; radius: 6; border.color: cLine }
+                                placeholderText: "**The gist**, then - a list, [links](https://…)"
+                            }
+                        }
+                    }
+                    Text {
+                        visible: !detail.it.summary && !summaryBox.editing
+                        text: "+ summary"; color: cSky; font.pixelSize: 11
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                    onClicked: { summaryEdit.text = ""; summaryBox.editing = true } }
+                    }
+
                     // State, in words.
                     Flow {
                         Layout.fillWidth: true
