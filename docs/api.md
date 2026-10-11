@@ -54,6 +54,22 @@ replaced) or behind what it still keeps (old changes compacted away) — the
 answer is `{"seq": N, "reset": true, "events": []}`: read the whole list again
 and carry on from `N`.
 
+### `GET /v1/lists/{list}/context`, `PUT /v1/lists/{list}/context`
+What the household tells its session about itself, so triage and help fit
+them:
+
+```json
+{"place": "Prague, Czechia", "language": "English", "currency": "CZK",
+ "notes": "Car: 2019 Octavia, tyres 205/55 R16.\nWe shop at Albert and Rohlik.",
+ "by": "phone.home", "updated": "2026-10-11T14:02:00Z"}
+```
+
+`PUT` replaces it (place, language and currency a line each, notes up to
+4000 characters) and tells the session. Only people change it: the session
+reads it with `get_context` and gets a 403 if it tries to write it. It is
+also in `GET /v1/lists/{list}` as `context`. A change to it moves the list's
+`seq` but is not one of the `changes`: those are items.
+
 ### `GET /v1/lists/{list}/pair`
 What a phone scans to find the list: `{"link": "foray://add?address=fd…&list=home",
 "address": "fd…", "qr": ["1110…", …]}` — the QR as rows of 0 and 1 for the app

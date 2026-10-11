@@ -260,3 +260,29 @@ func TestPairingLink(t *testing.T) {
 		t.Fatalf("pair: %v", p["link"])
 	}
 }
+
+// People set the household's context and the session is told; the session
+// reads it and cannot change it.
+func TestTheContextIsThePeoples(t *testing.T) {
+	f := newFixture(t)
+	code, c := f.call(t, f.home, "PUT", "/v1/lists/home/context", store.Context{Place: "Prague", Currency: "CZK"}, nil)
+	if code != 200 || c["place"] != "Prague" || c["by"] != "phone.home" {
+		t.Fatalf("set: %d %v", code, c)
+	}
+	if told := f.told(); len(told) != 1 || !strings.Contains(told[0], "get_context") {
+		t.Fatalf("the session was told: %v", told)
+	}
+	if code, _ := f.call(t, f.local, "PUT", "/v1/lists/home/context", store.Context{Place: "Rome"},
+		map[string]string{AsHeader: "foray-home"}); code != 403 {
+		t.Fatalf("the session changed the context: %d", code)
+	}
+	if code, c := f.call(t, f.local, "GET", "/v1/lists/home/context", nil, map[string]string{AsHeader: "foray-home"}); code != 200 || c["place"] != "Prague" {
+		t.Fatalf("the session reads: %d %v", code, c)
+	}
+	if _, l := f.call(t, f.home, "GET", "/v1/lists/home", nil, nil); l["context"].(map[string]any)["currency"] != "CZK" {
+		t.Fatalf("the list does not carry its context: %v", l["context"])
+	}
+	if code, _ := f.call(t, f.office, "PUT", "/v1/lists/home/context", store.Context{Place: "x"}, nil); code != 404 {
+		t.Fatalf("another mesh changed the context: %d", code)
+	}
+}

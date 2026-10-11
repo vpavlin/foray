@@ -200,6 +200,8 @@ func (c Client) Call(tool string, a Args) (string, error) {
 			"task": a.Task, "worker": a.Worker, "kind": a.Kind, "state": a.stateOr(), "ask": a.Ask, "answer": a.Answer})
 	case "decide_suggestion":
 		return c.decide(a)
+	case "get_context":
+		return c.context()
 	}
 	return "", fmt.Errorf("no tool %q", tool)
 }
@@ -219,6 +221,29 @@ func (c Client) item(method, path string, body any) (string, error) {
 	var it item
 	json.Unmarshal(b, &it)
 	return line(it), nil
+}
+
+// context is the household's context, as the session reads it.
+func (c Client) context() (string, error) {
+	b, err := c.do("GET", "/context", nil)
+	if err != nil {
+		return "", err
+	}
+	var x struct{ Place, Language, Currency, Notes string }
+	json.Unmarshal(b, &x)
+	var out []string
+	for _, f := range [][2]string{{"Place", x.Place}, {"Language", x.Language}, {"Currency", x.Currency}} {
+		if f[1] != "" {
+			out = append(out, f[0]+": "+f[1])
+		}
+	}
+	if x.Notes != "" {
+		out = append(out, "Notes:\n"+x.Notes)
+	}
+	if len(out) == 0 {
+		return "The household has not said anything about itself yet. Do not guess where they live or what currency they use: ask in a comment when it matters, and suggest they fill in the list's context in the app.", nil
+	}
+	return strings.Join(out, "\n"), nil
 }
 
 // decide is the session's answer to a suggestion: into the inbox for a
@@ -272,6 +297,8 @@ func (c Client) decide(a Args) (string, error) {
 
 // Tools is what the session is offered.
 var Tools = []map[string]any{
+	tool("get_context", "What the household has told you about itself: where they live, the language to answer in, the currency, and notes (the car, sizes, preferred shops, people). Read it before triaging and before asking an agent for help, and pass on what the request needs.",
+		props{}),
 	tool("list_items", "The list's items, one line each: id · state · due · title (who) [tags]. States: suggested (an agent's suggestion you have to decide on), inbox, open, waiting, done, dropped.",
 		props{"states": str("comma-separated states to show; all when empty")}),
 	tool("get_item", "One item in full: notes, comments, help requests and their answers.", props{"id": str("the item")}, "id"),
@@ -305,7 +332,7 @@ func tool(name, desc string, p props, required ...string) map[string]any {
 }
 
 // Instructions are what the session reads first about these tools.
-const Instructions = "This is a household's todo list, and you look after it. People add items in the Foray app; you are told, and triage: due dates, who, tags, a question back if something is unclear. When an item wants it — or a person asks — get help from other agents (list_agents, ask_agent), record it with record_help, and put the answer on the item. Agents' suggestions arrive as state suggested: decide on each. Never buy, book or send anything yourself: prepare it, and a person acts."
+const Instructions = "This is a household's todo list, and you look after it. People add items in the Foray app; you are told, and triage: due dates, who, tags, a question back if something is unclear. When an item wants it — or a person asks — read the household's context (get_context) and get help from other agents (list_agents, ask_agent), record it with record_help, and put the answer on the item. Agents' suggestions arrive as state suggested: decide on each. Never buy, book or send anything yourself: prepare it, and a person acts."
 
 // Serve answers MCP requests, one JSON-RPC message per line, until in ends.
 func Serve(in io.Reader, out io.Writer, c Client) error {

@@ -109,6 +109,9 @@ Item {
     property string said: ""
     // The list's pairing link and its QR, while it is shown.
     property var pairing: null
+    // What the household tells its assistant about itself (GET .../context).
+    property var context: ({})
+    property bool editingContext: false
 
     function listPath(sub) { return "/v1/lists/" + encodeURIComponent(current.name) + (sub || "") }
 
@@ -126,6 +129,7 @@ Item {
         if (!d || d.error) { root.said = d ? d.error : "no answer"; return }
         root.items = d.items || []
         root.asks = d.asks || []
+        root.context = d.context || {}
         root.seq = d.list ? d.list.seq : 0
     }
     function pollChanges() {
@@ -267,6 +271,12 @@ Item {
                 Layout.fillWidth: true
                 Text { text: root.current ? root.current.title : ""; color: cBone; font.pixelSize: 22 }
                 Item { Layout.fillWidth: true }
+                Text {
+                    visible: root.current !== null && root.current.session !== ""
+                    text: (root.context.place || root.context.notes) ? "about us" : "tell the assistant about you"
+                    color: (root.context.place || root.context.notes) ? cSky : cAmber; font.pixelSize: 12
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.editingContext = true }
+                }
                 Text {
                     text: "add a phone"
                     color: cSky; font.pixelSize: 12
@@ -616,6 +626,100 @@ Item {
                 }
                 Text { text: "close"; color: cAsh; font.pixelSize: 12; Layout.alignment: Qt.AlignHCenter
                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.pairing = null } }
+            }
+        }
+    }
+
+    // About us: the list's context, which the assistant reads before it
+    // triages or asks another agent for help.
+    Rectangle {
+        anchors.fill: parent
+        visible: root.editingContext
+        color: "#cc000000"
+        // Edits that were cancelled go: the fields start from the list's.
+        onVisibleChanged: if (visible) {
+            ctxPlace.text = root.context.place || ""
+            ctxLanguage.text = root.context.language || ""
+            ctxCurrency.text = root.context.currency || ""
+            ctxNotes.text = root.context.notes || ""
+            root.said = ""
+        }
+        MouseArea { anchors.fill: parent; onClicked: root.editingContext = false }
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 40, 520); height: Math.min(parent.height - 40, 560); radius: 14
+            color: cPanel; border.color: cLine
+            MouseArea { anchors.fill: parent }
+            ColumnLayout {
+                anchors.fill: parent; anchors.margins: 20
+                spacing: 10
+                Text { text: "About us"; color: cBone; font.pixelSize: 17 }
+                Text {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    text: "The assistant reads this before it helps, and passes on what a request needs — so prices come in your currency and places near you. Everybody on the list can change it."
+                    color: cAsh; font.pixelSize: 12
+                }
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2; columnSpacing: 10; rowSpacing: 8
+                    Text { text: "place"; color: cAsh; font.pixelSize: 12 }
+                    Rectangle {
+                        Layout.fillWidth: true; implicitHeight: 30; radius: 6; color: cRaised; border.color: cLine
+                        TextInput { id: ctxPlace; anchors.fill: parent; anchors.margins: 7; color: cBone; font.pixelSize: 13; clip: true
+                                    text: root.context.place || ""
+                                    Text { visible: !parent.text; text: "Prague, Czechia"; color: cLine; font.pixelSize: 13 } }
+                    }
+                    Text { text: "language"; color: cAsh; font.pixelSize: 12 }
+                    Rectangle {
+                        Layout.fillWidth: true; implicitHeight: 30; radius: 6; color: cRaised; border.color: cLine
+                        TextInput { id: ctxLanguage; anchors.fill: parent; anchors.margins: 7; color: cBone; font.pixelSize: 13; clip: true
+                                    text: root.context.language || ""
+                                    Text { visible: !parent.text; text: "what the assistant answers in"; color: cLine; font.pixelSize: 13 } }
+                    }
+                    Text { text: "currency"; color: cAsh; font.pixelSize: 12 }
+                    Rectangle {
+                        Layout.fillWidth: true; implicitHeight: 30; radius: 6; color: cRaised; border.color: cLine
+                        TextInput { id: ctxCurrency; anchors.fill: parent; anchors.margins: 7; color: cBone; font.pixelSize: 13; clip: true
+                                    text: root.context.currency || ""
+                                    Text { visible: !parent.text; text: "CZK"; color: cLine; font.pixelSize: 13 } }
+                    }
+                }
+                Text { text: "anything else worth knowing"; color: cAsh; font.pixelSize: 12 }
+                Rectangle {
+                    Layout.fillWidth: true; Layout.fillHeight: true; radius: 6; color: cRaised; border.color: cLine
+                    Flickable {
+                        id: ctxFlick
+                        anchors.fill: parent; anchors.margins: 8; clip: true
+                        contentHeight: ctxNotes.paintedHeight
+                        TextEdit {
+                            id: ctxNotes
+                            width: ctxFlick.width
+                            text: root.context.notes || ""
+                            color: cBone; font.pixelSize: 13; wrapMode: TextEdit.Wrap
+                            Text { visible: !parent.text; width: parent.width; wrapMode: Text.WordWrap; color: cLine; font.pixelSize: 13
+                                   text: "The car: 2019 Octavia, tyres 205/55 R16\nWe shop at …\nThe kids: …" }
+                        }
+                    }
+                }
+                Text {
+                    visible: !!root.context.by
+                    text: "last changed by " + root.byText(root.context.by || "")
+                    color: cAsh; font.pixelSize: 11
+                }
+                Text { visible: root.said !== ""; text: root.said; color: cRust; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Item { Layout.fillWidth: true }
+                    Text { text: "cancel"; color: cAsh; font.pixelSize: 13
+                           MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.editingContext = false } }
+                    Text { text: "Save"; color: cPhosphor; font.pixelSize: 14; Layout.leftMargin: 16
+                           MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                       onClicked: {
+                                           var d = root.write("PUT", "/context", { place: ctxPlace.text, language: ctxLanguage.text,
+                                                                                    currency: ctxCurrency.text, notes: ctxNotes.text })
+                                           if (d) root.editingContext = false
+                                       } } }
+                }
             }
         }
     }

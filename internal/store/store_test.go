@@ -134,3 +134,35 @@ func TestATornLastLineIsDropped(t *testing.T) {
 		t.Fatal("a damaged line in the middle was skipped")
 	}
 }
+
+// The context is kept across a restart and never shows up as a change: apps
+// apply changes by item, and it has none.
+func TestTheContextIsKeptAndIsNotAChange(t *testing.T) {
+	l, p := open(t)
+	a, _ := l.Add("phone.home", New{Title: "buy milk"})
+	if _, err := l.SetContext("phone.home", Context{Place: " Prague ", Currency: "CZK", Notes: "car: Octavia"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.SetContext("phone.home", Context{Notes: string(make([]byte, MaxNotes+1))}); err == nil {
+		t.Fatal("notes past the limit were kept")
+	}
+	l.Comment("phone.home", a.ID, "skimmed")
+
+	again, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := again.Context()
+	if c.Place != "Prague" || c.Currency != "CZK" || c.By != "phone.home" || c.Updated.IsZero() {
+		t.Fatalf("context after reopening: %+v", c)
+	}
+	ev, seq := again.Since(0)
+	if seq != 3 || len(ev) != 2 {
+		t.Fatalf("since 0: seq %d, %d events, want 3 and 2", seq, len(ev))
+	}
+	for _, e := range ev {
+		if e.Op == "context" {
+			t.Fatal("the context came back as a change")
+		}
+	}
+}

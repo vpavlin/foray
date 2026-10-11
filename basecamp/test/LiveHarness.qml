@@ -49,7 +49,17 @@ Item {
                 view.write("PATCH", "/items/" + milk.id, { state: "done" })
                 console.error("DONE=" + JSON.parse(top.http("GET", "/v1/lists/home")).items.filter(function (i) { return i.state === "done" }).length)
                 view.pairing = { link: "foray://add?address=fd7b::1&list=home", qr: JSON.parse(top.http("GET", "/v1/lists/home")).items.length ? top.demoQr : [] }
-                settle.next = function () { top.shot("foray-pair.png", function () { Qt.quit() }) }
+                settle.next = function () { top.shot("foray-pair.png", function () {
+                    // About us: saved through the view, read back from the service.
+                    view.pairing = null
+                    view.write("PUT", "/context", { place: "Prague, Czechia", language: "English", currency: "CZK",
+                                                    notes: "Car: 2019 Octavia, tyres 205/55 R16.\nWe shop at Albert and Rohlik." })
+                    var c = JSON.parse(top.http("GET", "/v1/lists/home/context"))
+                    console.error("CONTEXT=" + c.place + "|" + c.currency + "|" + (c.notes.indexOf("Octavia") >= 0))
+                    view.editingContext = true
+                    settle.next = function () { top.shot("foray-about.png", function () { Qt.quit() }) }
+                    settle.restart()
+                }) }
                 settle.restart()
             }) }
             settle.restart()

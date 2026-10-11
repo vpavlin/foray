@@ -82,9 +82,30 @@ type Event struct {
 	Seq  int64     `json:"seq"`
 	At   time.Time `json:"at"`
 	By   string    `json:"by"`
-	Op   string    `json:"op"` // add, update, comment, help
+	Op   string    `json:"op"` // add, update, comment, help, context
 	Item Item      `json:"item"`
+	// Context is the list's context as it is after an op "context". Those
+	// events are kept out of Since: apps apply events by item, and this one
+	// has none.
+	Context *Context `json:"context,omitempty"`
 }
+
+// Context is what the household tells its session about itself, so that
+// triage and help fit them: where they live, the language to answer in, the
+// money, and anything else worth knowing ("the car is a 2019 Octavia,
+// tyres 205/55 R16"). The people edit it; the session reads it.
+type Context struct {
+	Place    string    `json:"place,omitempty"`
+	Language string    `json:"language,omitempty"`
+	Currency string    `json:"currency,omitempty"`
+	Notes    string    `json:"notes,omitempty"`
+	By       string    `json:"by,omitempty"`
+	Updated  time.Time `json:"updated,omitzero"`
+}
+
+// MaxNotes bounds the context's notes: it goes into every request the
+// session makes, and a cheap model reads all of it.
+const MaxNotes = 4000
 
 // List is one list: its log on disk and its state in memory.
 type List struct {
@@ -92,6 +113,7 @@ type List struct {
 	path   string
 	items  map[string]*Item
 	events []Event
+	ctx    Context
 	seq    int64
 	now    func() time.Time
 }
@@ -138,6 +160,15 @@ func Load(path string) (*List, error) {
 }
 
 func (l *List) fold(e Event) {
+	if e.Op == "context" {
+		if e.Context != nil {
+			l.ctx = *e.Context
+		}
+		if e.Seq > l.seq {
+			l.seq = e.Seq
+		}
+		return
+	}
 	it := e.Item
 	l.items[it.ID] = &it
 	l.events = append(l.events, e)
@@ -149,28 +180,65 @@ func (l *List) fold(e Event) {
 // write appends an event and applies it. Caller holds l.mu.
 func (l *List) write(by, op string, it Item) (Item, error) {
 	it.Updated = l.now().UTC()
-	e := Event{Seq: l.seq + 1, At: it.Updated, By: by, Op: op, Item: it}
+	if err := l.append(Event{Seq: l.seq + 1, At: it.Updated, By: by, Op: op, Item: it}); err != nil {
+		return Item{}, err
+	}
+	return it, nil
+}
+
+// append writes an event to the log and folds it in. Caller holds l.mu.
+func (l *List) append(e Event) error {
 	b, err := json.Marshal(e)
 	if err != nil {
-		return Item{}, err
+		return err
 	}
 	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return Item{}, err
+		return err
 	}
 	if _, err := f.Write(append(b, '\n')); err != nil {
 		f.Close()
-		return Item{}, err
+		return err
 	}
 	if err := f.Sync(); err != nil {
 		f.Close()
-		return Item{}, err
+		return err
 	}
 	if err := f.Close(); err != nil {
-		return Item{}, err
+		return err
 	}
 	l.fold(e)
-	return it, nil
+	return nil
+}
+
+// Context is the list's context.
+func (l *List) Context() Context {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.ctx
+}
+
+// SetContext replaces the list's context.
+func (l *List) SetContext(by string, c Context) (Context, error) {
+	c.Place = strings.TrimSpace(c.Place)
+	c.Language = strings.TrimSpace(c.Language)
+	c.Currency = strings.TrimSpace(c.Currency)
+	c.Notes = strings.TrimSpace(c.Notes)
+	for _, f := range []string{c.Place, c.Language, c.Currency} {
+		if len(f) > 200 {
+			return Context{}, errors.New("place, language and currency are a line each")
+		}
+	}
+	if len(c.Notes) > MaxNotes {
+		return Context{}, fmt.Errorf("the notes are longer than %d characters", MaxNotes)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	c.By, c.Updated = by, l.now().UTC()
+	if err := l.append(Event{Seq: l.seq + 1, At: c.Updated, By: by, Op: "context", Context: &c}); err != nil {
+		return Context{}, err
+	}
+	return c, nil
 }
 
 // New is what can be given when adding an item.

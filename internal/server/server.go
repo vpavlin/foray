@@ -150,6 +150,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/lists/{list}", s.withList(s.getList))
 	mux.HandleFunc("GET /v1/lists/{list}/changes", s.withList(s.changes))
 	mux.HandleFunc("GET /v1/lists/{list}/pair", s.withList(s.pair))
+	mux.HandleFunc("GET /v1/lists/{list}/context", s.withList(s.getContext))
+	mux.HandleFunc("PUT /v1/lists/{list}/context", s.withWriter(s.setContext))
 	mux.HandleFunc("POST /v1/lists/{list}/items", s.withWriter(s.add))
 	mux.HandleFunc("PATCH /v1/lists/{list}/items/{id}", s.withWriter(s.update))
 	mux.HandleFunc("POST /v1/lists/{list}/items/{id}/comments", s.withWriter(s.comment))
@@ -243,7 +245,32 @@ func (s *Server) getList(w http.ResponseWriter, r *http.Request, l *list, _ stri
 	allowed := append([]string(nil), l.conf.SuggestFrom...)
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"list": info(l), "items": l.store.Items(states...),
-		"asks": asks, "suggest_from": allowed})
+		"asks": asks, "suggest_from": allowed, "context": l.store.Context()})
+}
+
+func (s *Server) getContext(w http.ResponseWriter, r *http.Request, l *list, _ string) {
+	writeJSON(w, http.StatusOK, l.store.Context())
+}
+
+// setContext replaces what the household tells its session about itself.
+// Only people change it: the session reads it, and a model that could
+// rewrite its own brief could be talked into rewriting it.
+func (s *Server) setContext(w http.ResponseWriter, r *http.Request, l *list, by string) {
+	if isSession(l, by) {
+		fail(w, http.StatusForbidden, errors.New("the context is the people's to change; suggest a change in a comment"))
+		return
+	}
+	var c store.Context
+	if !decode(w, r, &c) {
+		return
+	}
+	c, err := l.store.SetContext(by, c)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	s.tell(l, by, fmt.Sprintf("[foray %s] %s changed the household's context: read it again (get_context).", l.conf.Name, by))
+	writeJSON(w, http.StatusOK, c)
 }
 
 // changes is what happened after since. When the caller's since is not one

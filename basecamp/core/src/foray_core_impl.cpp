@@ -321,7 +321,7 @@ std::string ForayCoreImpl::get(const std::string& address, const std::string& pa
 std::string ForayCoreImpl::send(const std::string& address, const std::string& method,
                                 const std::string& path, const std::string& body)
 {
-    if (method != "POST" && method != "PATCH") return errorJson("POST or PATCH");
+    if (method != "POST" && method != "PATCH" && method != "PUT") return errorJson("POST, PATCH or PUT");
     std::string out, err;
     if (!request(address, method, path, body, 6, out, err)) return errorJson(err);
     return out;

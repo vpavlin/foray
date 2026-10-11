@@ -106,6 +106,17 @@ func TestTheSessionWorksTheList(t *testing.T) {
 		t.Fatalf("help not recorded: %s", full)
 	}
 
+	if out, _ = call("get_context", map[string]any{}); !strings.Contains(out, "Do not guess") {
+		t.Fatalf("an empty context: %s", out)
+	}
+	req, _ = http.NewRequest("PUT", mesh.URL+"/v1/lists/home/context", strings.NewReader(`{"place":"Prague","currency":"CZK","notes":"car: Octavia 2019"}`))
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("set context: %v %v", err, resp.Status)
+	}
+	if out, _ = call("get_context", map[string]any{}); !strings.Contains(out, "Place: Prague") || !strings.Contains(out, "Octavia") {
+		t.Fatalf("get_context: %s", out)
+	}
+
 	if out, isErr = call("decide_suggestion", map[string]any{"id": id, "decision": "maybe"}); !isErr {
 		t.Fatalf("a nonsense decision was taken: %s", out)
 	}
