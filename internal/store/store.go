@@ -424,7 +424,8 @@ func (l *List) Since(seq int64) ([]Event, int64) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	i := sort.Search(len(l.events), func(i int) bool { return l.events[i].Seq > seq })
-	return append([]Event(nil), l.events[i:]...), l.seq
+	// Never nil: an app reads "events": [] more kindly than null.
+	return append(make([]Event, 0, len(l.events)-i), l.events[i:]...), l.seq
 }
 
 // Oldest is the oldest change still kept: 1 while nothing has been compacted.

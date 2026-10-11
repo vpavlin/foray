@@ -156,6 +156,9 @@ func TestTheContextIsKeptAndIsNotAChange(t *testing.T) {
 	if c.Place != "Prague" || c.Currency != "CZK" || c.By != "phone.home" || c.Updated.IsZero() {
 		t.Fatalf("context after reopening: %+v", c)
 	}
+	if ev, _ := again.Since(again.Seq()); ev == nil {
+		t.Fatal("nothing new came back as nil, which an app reads as null")
+	}
 	ev, seq := again.Since(0)
 	if seq != 3 || len(ev) != 2 {
 		t.Fatalf("since 0: seq %d, %d events, want 3 and 2", seq, len(ev))
