@@ -359,6 +359,16 @@ func (l *List) Since(seq int64) ([]Event, int64) {
 	return append([]Event(nil), l.events[i:]...), l.seq
 }
 
+// Oldest is the oldest change still kept: 1 while nothing has been compacted.
+func (l *List) Oldest() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.events) == 0 {
+		return l.seq + 1
+	}
+	return l.events[0].Seq
+}
+
 // Seq is the newest change's number.
 func (l *List) Seq() int64 {
 	l.mu.Lock()

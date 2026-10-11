@@ -1,0 +1,16 @@
+{
+  "name": "foray",
+  "display_name": "Foray",
+  "version": "0.1.0",
+  "type": "ui_qml",
+  "category": "productivity",
+  "description": "The household's todo lists, kept on your own machines and shared by the people on your Shrooms mesh — with an assistant that can find out, compare, draft and plan when you ask. Needs Shrooms and foray_core.",
+  "view": "Main.qml",
+  "icon": "icon.png",
+  "dependencies": ["shrooms_core", "foray_core"],
+  "nix": {
+    "packages": { "build": [], "runtime": [] },
+    "external_libraries": [],
+    "cmake": { "find_packages": [] }
+  }
+}

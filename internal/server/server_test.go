@@ -221,3 +221,30 @@ func TestHelpIsRecordedLocally(t *testing.T) {
 		t.Fatalf("the ask did not reach the session: %v", told)
 	}
 }
+
+func TestWhoAmIAndAReset(t *testing.T) {
+	f := newFixture(t)
+	_, me := f.call(t, f.home, "GET", "/v1/whoami", nil, nil)
+	if me["name"] != "phone.home" || me["mesh"] != "home" || me["can_write"] != true {
+		t.Fatalf("whoami: %v", me)
+	}
+	f.callerOf = ""
+	if _, me = f.call(t, f.home, "GET", "/v1/whoami", nil, nil); me["can_write"] != false {
+		t.Fatalf("an unknown caller can write: %v", me)
+	}
+	f.callerOf = "phone.home"
+	f.call(t, f.home, "POST", "/v1/lists/home/items", store.New{Title: "a"}, nil)
+	_, ch := f.call(t, f.home, "GET", "/v1/lists/home/changes?since=0", nil, nil)
+	if ch["reset"] != nil || len(ch["events"].([]any)) != 1 {
+		t.Fatalf("changes from 0: %v", ch)
+	}
+	// A since this list never reached: the caller must read it all again.
+	if _, ch = f.call(t, f.home, "GET", "/v1/lists/home/changes?since=99", nil, nil); ch["reset"] != true {
+		t.Fatalf("a since ahead of the list did not reset: %v", ch)
+	}
+	// The session is always said, empty or not.
+	_, ls := f.call(t, f.home, "GET", "/v1/lists", nil, nil)
+	if _, ok := ls["lists"].([]any)[0].(map[string]any)["session"]; !ok {
+		t.Fatal("session missing from the list")
+	}
+}
