@@ -15,6 +15,11 @@ export interface ListInfo {
   name: string; title: string; mesh: string; session?: string; seq: number;
   counts?: Partial<Record<State, number>>;
 }
+/** What the household tells the assistant about itself (GET/PUT /v1/lists/{list}/context). */
+export interface ListContext { place?: string; language?: string; currency?: string; notes?: string; by?: string; updated?: string }
+export const hasContext = (c: ListContext | null | undefined) =>
+  !!c && !!((c.place || "").trim() || (c.language || "").trim() || (c.currency || "").trim() || (c.notes || "").trim());
+
 export interface Change { seq: number; at: string; by: string; op: "add" | "update" | "comment" | "help" | string; item: Item }
 
 // ── dates ────────────────────────────────────────────────────────────────────

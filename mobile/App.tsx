@@ -12,7 +12,7 @@ import { api, ApiError } from "./src/api";
 import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
 import { registerBackground } from "./src/background";
-import { Item, ListInfo, State, sections, applyChanges, dueBucket, dueLabel, whoLabel, HELP_KINDS, baseUrl } from "./src/model";
+import { Item, ListInfo, ListContext, State, sections, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, HELP_KINDS, baseUrl } from "./src/model";
 
 const C = {
   bg: "#F4F5F1", card: "#FFFFFF", text: "#1E2320", sub: "#67706A", faint: "#9AA29C", line: "#E2E5DF",
@@ -237,12 +237,15 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   const [showDone, setShowDone] = useState(false);
   const [showSuggested, setShowSuggested] = useState(false);
   const [sel, setSel] = useState<string | null>(initialItem);
+  const [ctx, setCtx] = useState<ListContext | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
     try {
       const r = await api.list(base, info.name);
       setList(r.list); setItems(r.items || []); setAsks(r.asks || []);
+      if (r.context && typeof r.context === "object") setCtx(r.context);
       seq.current = r.list.seq; setError(""); setLoaded(true);
     } catch (e) { setError(msg(e)); setLoaded(true); }
   }, [base, info.name]);
@@ -264,6 +267,8 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
       try {
         const ch = await api.changes(base, info.name, seq.current);
         if (ch.reset) { load(); return; }
+        // The list moved but no item did: the household's context changed. Reload it.
+        if (typeof ch.seq === "number" && ch.seq !== seq.current && !(ch.events || []).length) { load(); return; }
         if (ch.events && ch.events.length) setItems((xs) => applyChanges(xs, ch.events));
         if (typeof ch.seq === "number") seq.current = ch.seq;
         setError("");
@@ -294,7 +299,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   const sec = useMemo(() => sections(items), [items]);
   const now = new Date();
   const selected = items.find((x) => x.id === sel) || null;
-  useBack(() => { if (!selected) onBack(); });
+  useBack(() => { if (!selected && !aboutOpen) onBack(); });
 
   const Row = ({ it }: { it: Item }) => {
     const b = dueBucket(it.due, now), done = it.state === "done" || it.state === "dropped";
@@ -332,6 +337,8 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
 
   // The item is a screen in this window, not a Modal: a Modal is its own Android window, which the
   // keyboard covers without resizing, hiding the reply box.
+  if (aboutOpen) return <AboutUs base={base} list={list} ctx={ctx} me={me} readOnly={readOnly}
+    onClose={() => setAboutOpen(false)} onSaved={(c) => setCtx(c)} onReadOnly={() => setReadOnly(true)} />;
   if (selected) return <ItemSheet base={base} list={list} item={selected} me={me} readOnly={readOnly} items={items}
     onClose={() => setSel(null)} onChanged={upsert} onReadOnly={() => setReadOnly(true)} />;
 
@@ -339,7 +346,12 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
     <View style={{ flex: 1 }}>
       <View style={s.header}>
         <Pressable hitSlop={10} onPress={onBack}><Text style={s.headerLink}>‹ Lists</Text></Pressable>
-        <Text style={s.screenTitle} numberOfLines={1}>{list.title || list.name}</Text>
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <Text style={[s.screenTitle, { flex: 0 }]} numberOfLines={1}>{list.title || list.name}</Text>
+          <Pressable hitSlop={8} onPress={() => setAboutOpen(true)}>
+            <Text style={{ fontSize: 13, color: hasContext(ctx) ? C.blue : C.warn }}>{hasContext(ctx) ? "About us" : "Tell the assistant about you"}</Text>
+          </Pressable>
+        </View>
         <View style={{ width: 50 }} />
       </View>
       {!readOnly && (
@@ -376,6 +388,80 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
           <Pressable onPress={() => setShowDone(!showDone)}><Text style={s.fold}>{showDone ? "Hide" : "Show"} done ({sec.done.length})</Text></Pressable>
         )}
         {showDone && <Section title="Done" list={sec.done} />}
+      </ScrollView>
+    </View>
+  );
+}
+
+// ── about us: the household's context, which the assistant reads before it helps ─
+function AboutUs({ base, list, ctx, me, readOnly, onClose, onSaved, onReadOnly }: {
+  base: string; list: ListInfo; ctx: ListContext | null; me: string; readOnly: boolean;
+  onClose: () => void; onSaved: (c: ListContext) => void; onReadOnly: () => void;
+}) {
+  const [place, setPlace] = useState(ctx?.place || "");
+  const [language, setLanguage] = useState(ctx?.language || "");
+  const [currency, setCurrency] = useState(ctx?.currency || "");
+  const [notes, setNotes] = useState(ctx?.notes || "");
+  const [cur, setCur] = useState<ListContext | null>(ctx);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const kbPad = useKeyboardPad();
+  // Read the freshest copy when the screen opens; fill the fields only if nothing was typed yet.
+  const typed = useRef(false);
+  useEffect(() => {
+    api.context(base, list.name).then((c) => {
+      if (!c) return;
+      setCur(c);
+      if (!typed.current) { setPlace(c.place || ""); setLanguage(c.language || ""); setCurrency(c.currency || ""); setNotes(c.notes || ""); }
+    }).catch(() => {});
+  }, [base, list.name]);
+  const edit = (f: (t: string) => void) => (t: string) => { typed.current = true; f(t); };
+  const dirty = place.trim() !== (cur?.place || "") || language.trim() !== (cur?.language || "")
+    || currency.trim() !== (cur?.currency || "") || notes.trim() !== (cur?.notes || "");
+  const close = () => {
+    if (dirty && !readOnly) Alert.alert("Save what you wrote?", "", [{ text: "Discard", style: "destructive", onPress: onClose }, { text: "Save", onPress: () => { save().then((ok) => { if (ok) onClose(); }); } }]);
+    else onClose();
+  };
+  useBack(close);
+  const save = async (): Promise<boolean> => {
+    if (busy) return false;
+    setBusy(true); setError("");
+    try {
+      const c = await api.setContext(base, list.name, { place: place.trim(), language: language.trim(), currency: currency.trim(), notes: notes.trim() });
+      const saved = c && typeof c === "object" && "place" in c ? c : { place: place.trim(), language: language.trim(), currency: currency.trim(), notes: notes.trim(), by: me };
+      setCur(saved); onSaved(saved); typed.current = false; toast("Saved");
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) onReadOnly();
+      setError(msg(e)); return false;
+    } finally { setBusy(false); }
+  };
+  const Field = ({ label, value, onChange, placeholder, max }: { label: string; value: string; onChange: (t: string) => void; placeholder: string; max: number }) => (
+    <>
+      <Text style={s.label}>{label}</Text>
+      <TextInput style={s.input} value={value} onChangeText={onChange} editable={!readOnly} placeholder={placeholder} placeholderTextColor={C.faint} maxLength={max} />
+    </>
+  );
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg, paddingBottom: kbPad }}>
+      <View style={s.header}>
+        <Pressable hitSlop={10} onPress={close}><Text style={s.headerLink}>‹ {list.title || list.name}</Text></Pressable>
+        <Text style={s.screenTitle}>About us</Text>
+        {!readOnly && dirty ? <Pressable hitSlop={10} onPress={save}><Text style={[s.headerLink, { fontWeight: "700" }]}>Save</Text></Pressable> : <View style={{ width: 40 }} />}
+      </View>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
+        <Text style={s.sub}>The assistant reads this before it helps, so prices come in your currency and places near you. Everybody on the list can change it.</Text>
+        {Field({ label: "Where you live", value: place, onChange: edit(setPlace), placeholder: "e.g. Prague, Czechia", max: 200 })}
+        {Field({ label: "Language", value: language, onChange: edit(setLanguage), placeholder: "what the assistant answers in", max: 200 })}
+        {Field({ label: "Currency", value: currency, onChange: edit(setCurrency), placeholder: "e.g. CZK", max: 200 })}
+        <Text style={s.label}>Anything else worth knowing</Text>
+        <TextInput style={[s.input, { minHeight: 120, textAlignVertical: "top" }]} value={notes} onChangeText={edit(setNotes)} editable={!readOnly} multiline maxLength={4000}
+          placeholder={"The car: 2019 Octavia, tyres 205/55 R16\nWe shop at …"} placeholderTextColor={C.faint} />
+        {notes.length > 3600 && <Text style={s.hint}>{4000 - notes.length} characters left</Text>}
+        {!!error && <Text style={[s.sub, { color: C.warn }]}>{error}</Text>}
+        {!readOnly && <Pressable onPress={save} disabled={busy || !dirty} style={[s.primaryBtn, (busy || !dirty) && { opacity: 0.5 }]}><Text style={s.primaryBtnT}>{busy ? "Saving…" : "Save"}</Text></Pressable>}
+        {readOnly && <Text style={s.hint}>This phone can read this but not change it.</Text>}
+        {!!cur?.by && <Text style={s.hint}>Last changed by {whoLabel(cur.by, list.session, me)}{cur.updated ? `, ${new Date(cur.updated).toLocaleString()}` : ""}.</Text>}
       </ScrollView>
     </View>
   );
