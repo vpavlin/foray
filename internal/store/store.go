@@ -101,12 +101,27 @@ type Event struct {
 // money, and anything else worth knowing ("the car is a 2019 Octavia,
 // tyres 205/55 R16"). The people edit it; the session reads it.
 type Context struct {
-	Place    string    `json:"place,omitempty"`
-	Language string    `json:"language,omitempty"`
-	Currency string    `json:"currency,omitempty"`
-	Notes    string    `json:"notes,omitempty"`
-	By       string    `json:"by,omitempty"`
-	Updated  time.Time `json:"updated,omitzero"`
+	Place    string `json:"place,omitempty"`
+	Language string `json:"language,omitempty"`
+	Currency string `json:"currency,omitempty"`
+	Notes    string `json:"notes,omitempty"`
+	// Helpers are the agents the session may ask for help, and what each is
+	// good for. Adding one is the people trusting it with this list's tasks.
+	Helpers []Helper  `json:"helpers,omitempty"`
+	By      string    `json:"by,omitempty"`
+	Updated time.Time `json:"updated,omitzero"`
+}
+
+// Helper is an agent a list's session may ask: MACHINE/SESSION.
+type Helper struct {
+	Agent string `json:"agent"`
+	For   string `json:"for,omitempty"` // "Logos apps, Scala"
+}
+
+// ValidAgent says whether a is MACHINE/SESSION.
+func ValidAgent(a string) bool {
+	m, sess, ok := strings.Cut(a, "/")
+	return ok && m != "" && sess != "" && !strings.ContainsAny(a, " \t\n") && !strings.Contains(sess, "/")
 }
 
 // MaxSummary bounds an item's summary: a page, not a report.
@@ -241,6 +256,25 @@ func (l *List) SetContext(by string, c Context) (Context, error) {
 	if len(c.Notes) > MaxNotes {
 		return Context{}, fmt.Errorf("the notes are longer than %d characters", MaxNotes)
 	}
+	if len(c.Helpers) > 20 {
+		return Context{}, errors.New("at most 20 helpers")
+	}
+	seen := map[string]bool{}
+	helpers := c.Helpers[:0:0]
+	for _, h := range c.Helpers {
+		h.Agent, h.For = strings.TrimSpace(h.Agent), strings.TrimSpace(h.For)
+		if !ValidAgent(h.Agent) {
+			return Context{}, fmt.Errorf("helper %q: want MACHINE/SESSION", h.Agent)
+		}
+		if len(h.For) > 200 {
+			return Context{}, fmt.Errorf("helper %s: what it is for is a line", h.Agent)
+		}
+		if !seen[h.Agent] {
+			seen[h.Agent] = true
+			helpers = append(helpers, h)
+		}
+	}
+	c.Helpers = helpers
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	c.By, c.Updated = by, l.now().UTC()

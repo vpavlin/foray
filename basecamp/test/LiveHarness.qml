@@ -54,9 +54,10 @@ Item {
                     // About us: saved through the view, read back from the service.
                     view.pairing = null
                     view.write("PUT", "/context", { place: "Prague, Czechia", language: "English", currency: "CZK",
-                                                    notes: "Car: 2019 Octavia, tyres 205/55 R16.\nWe shop at Albert and Rohlik." })
+                                                    notes: "Car: 2019 Octavia, tyres 205/55 R16.\nWe shop at Albert and Rohlik.",
+                                                    helpers: view.parseHelpers("duet/duet — research\njimmy-crib/vpavlin: Logos apps, Scala\nnot a helper") })
                     var c = JSON.parse(top.http("GET", "/v1/lists/home/context"))
-                    console.error("CONTEXT=" + c.place + "|" + c.currency + "|" + (c.notes.indexOf("Octavia") >= 0))
+                    console.error("CONTEXT=" + c.place + "|" + c.currency + "|" + (c.notes.indexOf("Octavia") >= 0) + "|" + JSON.stringify(c.helpers))
                     view.editingContext = true
                     settle.next = function () { top.shot("foray-about.png", function () {
                         view.editingContext = false

@@ -23,4 +23,17 @@ func TestNamesKnowPeersAndThisMachine(t *testing.T) {
 	if a := st.Addresses()["home"]; a.String() != "fd7b::1" {
 		t.Errorf("address on home: %v", a)
 	}
+	// And the other way: a machine's address on a mesh, this one's too.
+	for _, c := range []struct{ machine, mesh, want string }{
+		{"phone", "home", "fd7b::2"}, {"jimmy-crib", "home", "fd7b::1"}, {"phone", "office", ""}, {"old", "home", ""}} {
+		a, ok := n.Find(c.machine, c.mesh)
+		if got := ""; ok {
+			got = a.String()
+			if got != c.want {
+				t.Errorf("find %s on %s: %s, want %q", c.machine, c.mesh, got, c.want)
+			}
+		} else if c.want != "" {
+			t.Errorf("find %s on %s: not found, want %s", c.machine, c.mesh, c.want)
+		}
+	}
 }

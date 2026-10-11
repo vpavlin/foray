@@ -300,7 +300,7 @@ func TestAnalyzeLeavesItToTheSession(t *testing.T) {
 		t.Fatalf("the session was told: %v", told)
 	}
 	f.call(t, f.home, "POST", "/v1/lists/home/items/"+id+"/ask", map[string]string{"kind": "find out"}, nil)
-	if told := f.told(); len(told) != 1 || !strings.Contains(told[0], "ask the agent that fits") {
+	if told := f.told(); len(told) != 1 || !strings.Contains(told[0], "look it up yourself or ask the helper that fits") {
 		t.Fatalf("find out: %v", told)
 	}
 }
@@ -323,6 +323,59 @@ func TestASummaryEditReachesTheSession(t *testing.T) {
 		t.Fatalf("edit: %d %v", code, got)
 	}
 	if told := f.told(); len(told) != 1 || !strings.Contains(told[0], "edited the summary") {
+		t.Fatalf("the session was told: %v", told)
+	}
+}
+
+// Helpers: adding one lets it take the list's session's tasks, taking it away
+// withdraws that unless another list here still has it, and a person can
+// ask a helper by name — only one of the list's.
+func TestHelpersAreTrustedAndAskedByName(t *testing.T) {
+	f := newFixture(t)
+	type call struct {
+		mesh, agent string
+		on          bool
+	}
+	var calls []call
+	f.s.Trust = func(mesh, agent string, on bool) error {
+		calls = append(calls, call{mesh, agent, on})
+		return nil
+	}
+	put := func(helpers ...store.Helper) map[string]any {
+		code, out := f.call(t, f.home, "PUT", "/v1/lists/home/context", store.Context{Place: "Brno", Helpers: helpers}, nil)
+		if code != 200 {
+			t.Fatalf("put: %d %v", code, out)
+		}
+		return out
+	}
+	out := put(store.Helper{Agent: "jimmy-crib/vpavlin", For: "Logos apps"}, store.Helper{Agent: "duet/duet"})
+	if len(calls) != 2 || calls[0] != (call{"home", "jimmy-crib/vpavlin", true}) || out["trust"].(map[string]any)["duet/duet"] != "accepting" {
+		t.Fatalf("adding: %v %v", calls, out["trust"])
+	}
+	calls = nil
+	out = put(store.Helper{Agent: "duet/duet"})
+	if len(calls) != 1 || calls[0] != (call{"home", "jimmy-crib/vpavlin", false}) {
+		t.Fatalf("removing: %v %v", calls, out["trust"])
+	}
+	calls = nil
+	put(store.Helper{Agent: "duet/duet", For: "research"})
+	if len(calls) != 0 {
+		t.Fatalf("an unchanged helper was set again: %v", calls)
+	}
+	if code, _ := f.call(t, f.home, "PUT", "/v1/lists/home/context", store.Context{Helpers: []store.Helper{{Agent: "nobody"}}}, nil); code != 400 {
+		t.Fatalf("a helper that is not MACHINE/SESSION: %d", code)
+	}
+
+	_, it := f.call(t, f.home, "POST", "/v1/lists/home/items", store.New{Title: "demo recordings"}, nil)
+	f.told()
+	id := it["id"].(string)
+	if code, _ := f.call(t, f.home, "POST", "/v1/lists/home/items/"+id+"/ask", map[string]string{"kind": "find out", "to": "pi5/jimmy"}, nil); code != 400 {
+		t.Fatalf("asked an agent that is not a helper: %d", code)
+	}
+	if code, _ := f.call(t, f.home, "POST", "/v1/lists/home/items/"+id+"/ask", map[string]string{"kind": "find out", "to": "duet/duet"}, nil); code != 200 {
+		t.Fatalf("asked a helper: %d", code)
+	}
+	if told := f.told(); len(told) != 1 || !strings.Contains(told[0], "asks duet/duet for find out") || !strings.Contains(told[0], "Ask duet/duet (they chose it)") {
 		t.Fatalf("the session was told: %v", told)
 	}
 }

@@ -195,6 +195,21 @@ Item {
         flushPara(); closeList()
         return out.join("")
     }
+    // Helpers as lines, "machine/session — what for", and back.
+    function helpersText(hs) {
+        return (hs || []).map(function (h) { return h.agent + (h["for"] ? " — " + h["for"] : "") }).join("\n")
+    }
+    function parseHelpers(text) {
+        var out = []
+        String(text || "").split("\n").forEach(function (line) {
+            var m = line.trim().match(/^(\S+\/\S+)\s*(?:[—–:-]\s*(.*))?$/)
+            if (m) out.push({ agent: m[1], "for": (m[2] || "").trim() })
+        })
+        return out
+    }
+    // Who a help request goes to: "" leaves it to the assistant.
+    property string helpTo: ""
+
     function openLink(link) {
         if (/^https?:\/\//.test(link)) Qt.openUrlExternally(link)
     }
@@ -714,7 +729,23 @@ Item {
                                 color: "transparent"; border.color: cViolet
                                 Text { id: helpLabel; anchors.centerIn: parent; text: modelData[1]; color: cViolet; font.pixelSize: 12 }
                                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.write("POST", "/items/" + detail.it.id + "/ask", { kind: modelData[0], text: askText.text.trim() }) }
+                                            onClicked: root.write("POST", "/items/" + detail.it.id + "/ask", { kind: modelData[0], text: askText.text.trim(), to: root.helpTo }) }
+                            }
+                        }
+                    }
+                    // Who: the assistant decides, or one of the list's helpers.
+                    Flow {
+                        visible: root.current && root.current.session !== "" && (root.context.helpers || []).length > 0
+                        Layout.fillWidth: true; spacing: 8
+                        Text { text: "via"; color: cAsh; font.pixelSize: 11; height: 18; verticalAlignment: Text.AlignVCenter }
+                        Repeater {
+                            model: [""].concat((root.context.helpers || []).map(function (h) { return h.agent }))
+                            delegate: Text {
+                                text: modelData === "" ? "the assistant decides" : modelData
+                                height: 18; verticalAlignment: Text.AlignVCenter; font.pixelSize: 11
+                                color: root.helpTo === modelData ? cPhosphor : cAsh
+                                font.underline: root.helpTo === modelData
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.helpTo = modelData }
                             }
                         }
                     }
@@ -831,6 +862,7 @@ Item {
             ctxLanguage.text = root.context.language || ""
             ctxCurrency.text = root.context.currency || ""
             ctxNotes.text = root.context.notes || ""
+            ctxHelpers.text = root.helpersText(root.context.helpers)
             root.said = ""
         }
         MouseArea { anchors.fill: parent; onClicked: root.editingContext = false }
@@ -890,6 +922,23 @@ Item {
                         }
                     }
                 }
+                Text { text: "helpers — agents the assistant may ask, one per line: machine/session — what for"; color: cAsh; font.pixelSize: 12 }
+                Rectangle {
+                    Layout.fillWidth: true; implicitHeight: 74; radius: 6; color: cRaised; border.color: cLine
+                    Flickable {
+                        id: helpFlick
+                        anchors.fill: parent; anchors.margins: 8; clip: true
+                        contentHeight: ctxHelpers.paintedHeight
+                        TextEdit {
+                            id: ctxHelpers
+                            width: helpFlick.width
+                            text: root.helpersText(root.context.helpers)
+                            color: cBone; font.pixelSize: 12; font.family: "monospace"; wrapMode: TextEdit.Wrap
+                            Text { visible: !parent.text; width: parent.width; wrapMode: Text.WordWrap; color: cLine; font.pixelSize: 12
+                                   text: "jimmy-crib/vpavlin — Logos apps, Scala\nduet/duet — research" }
+                        }
+                    }
+                }
                 Text {
                     visible: !!root.context.by
                     text: "last changed by " + root.byText(root.context.by || "")
@@ -905,8 +954,14 @@ Item {
                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                        onClicked: {
                                            var d = root.write("PUT", "/context", { place: ctxPlace.text, language: ctxLanguage.text,
-                                                                                    currency: ctxCurrency.text, notes: ctxNotes.text })
-                                           if (d) root.editingContext = false
+                                                                                    currency: ctxCurrency.text, notes: ctxNotes.text,
+                                                                                    helpers: root.parseHelpers(ctxHelpers.text) })
+                                           // A helper the service could not set up stays open to say why.
+                                           var bad = []
+                                           for (var k in (d && d.trust) || {})
+                                               if (d.trust[k] !== "accepting" && d.trust[k] !== "no longer accepting") bad.push(k + ": " + d.trust[k])
+                                           if (bad.length) root.said = "Saved, but " + bad.join("; ")
+                                           else if (d) root.editingContext = false
                                        } } }
                 }
             }

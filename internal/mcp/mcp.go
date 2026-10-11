@@ -238,7 +238,10 @@ func (c Client) context() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var x struct{ Place, Language, Currency, Notes string }
+	var x struct {
+		Place, Language, Currency, Notes string
+		Helpers                          []struct{ Agent, For string }
+	}
 	json.Unmarshal(b, &x)
 	var out []string
 	for _, f := range [][2]string{{"Place", x.Place}, {"Currency", x.Currency}} {
@@ -255,8 +258,21 @@ func (c Client) context() (string, error) {
 	if x.Notes != "" {
 		out = append(out, "Notes:\n"+x.Notes)
 	}
-	if len(out) == 0 {
-		return "The household has not said anything about itself yet. Do not guess where they live or what currency they use: ask in a comment when it matters, and suggest they fill in the list's context in the app.", nil
+	said := len(out) > 0
+	if len(x.Helpers) > 0 {
+		h := "Helpers — the agents you may ask, and what each is for (ask no others):"
+		for _, a := range x.Helpers {
+			h += "\n- " + a.Agent
+			if a.For != "" {
+				h += " — " + a.For
+			}
+		}
+		out = append(out, h)
+	} else {
+		out = append(out, "Helpers: none — look things up yourself; no agent is set up to take this list's tasks.")
+	}
+	if !said && len(x.Helpers) == 0 {
+		return "The household has not said anything about itself yet. Do not guess where they live or what currency they use: ask in a comment when it matters, and suggest they fill in the list's context in the app. No helpers either: look things up yourself.", nil
 	}
 	return strings.Join(out, "\n"), nil
 }
@@ -323,7 +339,7 @@ var Tools = []map[string]any{
 	tool("update_item", "Change an item: title, notes, summary, state, due, who, tags. Only the fields given change. Notes are the people's: leave them unless asked.",
 		props{"id": str(""), "title": str(""), "notes": str("the people's own notes"),
 			"summary": str("what is known about the item, in markdown: the gist, the facts that matter, links to act on, sources. Replaces the whole summary: keep what is still true, including anything a person wrote"),
-			"state": str(""), "due": str(""), "who": str(""), "tags": arr("")}, "id"),
+			"state":   str(""), "due": str(""), "who": str(""), "tags": arr("")}, "id"),
 	tool("comment", "Say something on an item — a question for the people, or what you found. They see it in the app and their answers come back to you.",
 		props{"id": str(""), "text": str("")}, "id", "text"),
 	tool("record_help", "Record help asked of another agent for an item, and its progress: call it when you send the task (state working) and again with the answer.",

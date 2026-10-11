@@ -69,7 +69,9 @@ func (st Status) Addresses() map[string]netip.Addr {
 type Names struct {
 	mu   sync.Mutex
 	by   map[netip.Addr]string
+	addr map[string]netip.Addr // "jimmy-crib.home" → its IPv6 address there
 	self string
+	own  map[string]netip.Addr // this machine's address on each mesh
 }
 
 // Update takes the daemon's latest roster.
@@ -92,9 +94,28 @@ func (n *Names) Update(st Status) {
 			by[a.Unmap()] = st.Name
 		}
 	}
+	addr := map[string]netip.Addr{}
+	for _, p := range st.Peers {
+		if a, err := netip.ParseAddr(p.Overlay); err == nil && p.Mesh != "" {
+			addr[p.Name+"."+p.Mesh] = a.Unmap()
+		}
+	}
 	n.mu.Lock()
-	n.by, n.self = by, st.Name
+	n.by, n.addr, n.self, n.own = by, addr, st.Name, st.Addresses()
 	n.mu.Unlock()
+}
+
+// Find is a machine's address on a mesh, by the name the mesh knows it by;
+// this machine's own too.
+func (n *Names) Find(machine, mesh string) (netip.Addr, bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if machine == n.self {
+		a, ok := n.own[mesh]
+		return a, ok
+	}
+	a, ok := n.addr[machine+"."+mesh]
+	return a, ok
 }
 
 // Who names an address, or "" for one the mesh does not know.

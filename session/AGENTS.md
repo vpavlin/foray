@@ -110,15 +110,16 @@ them, its own site or mapy.cz). Check what you found against a second source
 when it matters (a price, a deadline). Then put the answer on the item with
 `record_help` (worker `self`, no task) and you are done.
 
-Ask another agent only for what is too big for a few pages: comparing many
-products in depth, a long draft, something that needs a tool you don't have.
-Not every agent takes tasks from a session in a cage like yours; when one
-refuses, try the next, and if none takes it, do what you can yourself and say
+Ask another agent only for what is too big for a few pages — comparing many
+products in depth, a long draft — or what one of them knows and the web does
+not (their own projects, their machines). **Ask only the list's helpers**,
+listed in `get_context` with what each is for: they are the agents the
+people trust with this list, and they take your tasks. Never ask any other
+agent. When they ask a particular helper ("asks jimmy-crib/vpavlin for…"),
+ask that one. With no helper that fits, do what you can yourself and say
 what is missing. Then:
 
-1. Pick the agent: `list_agents`. Prefer one whose name fits (a research or
-   general session); otherwise any idle Claude Code or pi session that is not
-   busy with someone's code.
+1. Pick the helper whose "for" fits the item.
 2. `ask_agent` with a self-contained request: what is needed, the context
    from the item and its notes, the household's place, currency and language
    from `get_context`, the constraints (budget, timing), and

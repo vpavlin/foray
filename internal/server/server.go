@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,6 +73,10 @@ type Server struct {
 	Notify func(l ListConfig, text string)
 	// Addr is this machine's address on a mesh.
 	Addr func(mesh string) (netip.Addr, bool)
+	// Trust sets whether a helper — MACHINE/SESSION, found on the list's
+	// mesh — takes tasks from caged agents (shrooms-agent's accept_caged).
+	// Set by main; nil leaves helpers' settings alone.
+	Trust func(mesh, agent string, on bool) error
 }
 
 // New opens every configured list.
@@ -264,13 +269,79 @@ func (s *Server) setContext(w http.ResponseWriter, r *http.Request, l *list, by 
 	if !decode(w, r, &c) {
 		return
 	}
+	before := l.store.Context()
 	c, err := l.store.SetContext(by, c)
 	if err != nil {
 		fail(w, http.StatusBadRequest, err)
 		return
 	}
-	s.tell(l, by, fmt.Sprintf("[foray %s] %s changed the household's context: read it again (get_context).", l.conf.Name, by))
-	writeJSON(w, http.StatusOK, c)
+	trust := s.trustHelpers(l, before.Helpers, c.Helpers)
+	s.tell(l, by, fmt.Sprintf("[foray %s] %s changed the list's context: read it again (get_context).", l.conf.Name, by))
+	out := map[string]any{}
+	b, _ := json.Marshal(c)
+	json.Unmarshal(b, &out)
+	if len(trust) > 0 {
+		out["trust"] = trust
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// trustHelpers lets a list's new helpers take its session's tasks — its
+// session is caged, and a session outside a cage refuses caged agents
+// unless told otherwise (shrooms ADR-044) — and takes that back from a
+// helper no list here has any more. What happened, per helper, is returned:
+// "accepting", "no longer accepting", or why not.
+func (s *Server) trustHelpers(l *list, before, after []store.Helper) map[string]string {
+	if s.Trust == nil || l.conf.Session == "" {
+		return nil
+	}
+	had := map[string]bool{}
+	for _, h := range before {
+		had[h.Agent] = true
+	}
+	out := map[string]string{}
+	for _, h := range after {
+		if had[h.Agent] {
+			delete(had, h.Agent)
+			continue
+		}
+		if err := s.Trust(l.conf.Mesh, h.Agent, true); err != nil {
+			out[h.Agent] = err.Error()
+		} else {
+			out[h.Agent] = "accepting"
+		}
+	}
+	for agent := range had {
+		if s.helperElsewhere(l, agent) {
+			continue
+		}
+		if err := s.Trust(l.conf.Mesh, agent, false); err != nil {
+			out[agent] = err.Error()
+		} else {
+			out[agent] = "no longer accepting"
+		}
+	}
+	return out
+}
+
+// helperElsewhere: another list here, on the same mesh, still has it.
+func (s *Server) helperElsewhere(l *list, agent string) bool {
+	s.mu.Lock()
+	others := make([]*list, 0, len(s.lists))
+	for _, o := range s.lists {
+		if o != l && o.conf.Mesh == l.conf.Mesh {
+			others = append(others, o)
+		}
+	}
+	s.mu.Unlock()
+	for _, o := range others {
+		for _, h := range o.store.Context().Helpers {
+			if h.Agent == agent {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // changes is what happened after since. When the caller's since is not one
@@ -381,9 +452,20 @@ func (s *Server) comment(w http.ResponseWriter, r *http.Request, l *list, by str
 // ask is a person asking the session to get help with an item: it is
 // recorded on the item and handed to the session, which picks the agent.
 func (s *Server) ask(w http.ResponseWriter, r *http.Request, l *list, by string) {
-	var a struct{ Kind, Text string }
+	var a struct{ Kind, Text, To string }
 	if !decode(w, r, &a) {
 		return
+	}
+	// A helper named by the person: one of the list's, or none.
+	if a.To = strings.TrimSpace(a.To); a.To != "" {
+		found := false
+		for _, h := range l.store.Context().Helpers {
+			found = found || h.Agent == a.To
+		}
+		if !found {
+			fail(w, http.StatusBadRequest, fmt.Errorf("%s is not one of this list's helpers (about us)", a.To))
+			return
+		}
 	}
 	if l.conf.Session == "" {
 		fail(w, http.StatusConflict, errors.New("this list has no session to ask"))
@@ -394,6 +476,9 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request, l *list, by string)
 		kind = "help"
 	}
 	text := "asks for " + kind
+	if a.To != "" {
+		text = "asks " + a.To + " for " + kind
+	}
 	if t := strings.TrimSpace(a.Text); t != "" {
 		text += ": " + t
 	}
@@ -406,8 +491,11 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request, l *list, by string)
 		// The person leaves it to the session what, if anything, would help.
 		s.tell(l, by, fmt.Sprintf("[foray %s] %s %s — on %q (item %s). Work out what would help with it (find out, compare, draft, plan — or nothing), do that the way you would if asked, and say what you did in a comment. If nothing would help, say why in one line.",
 			l.conf.Name, by, text, it.Title, it.ID))
+	} else if a.To != "" {
+		s.tell(l, by, fmt.Sprintf("[foray %s] %s %s — on %q (item %s). Ask %s (they chose it), record it with record_help.",
+			l.conf.Name, by, text, it.Title, it.ID, a.To))
 	} else {
-		s.tell(l, by, fmt.Sprintf("[foray %s] %s %s — on %q (item %s). Get it done: ask the agent that fits, record it with record_help.",
+		s.tell(l, by, fmt.Sprintf("[foray %s] %s %s — on %q (item %s). Get it done: look it up yourself or ask the helper that fits, record it with record_help.",
 			l.conf.Name, by, text, it.Title, it.ID))
 	}
 	writeJSON(w, http.StatusOK, it)
@@ -564,6 +652,37 @@ func AgentNotifier(addr func(mesh string) (netip.Addr, bool), port int, log *slo
 		if resp.StatusCode/100 != 2 {
 			log.Warn("the list's session refused a note", "list", l.Name, "session", l.Session, "status", resp.Status)
 		}
+	}
+}
+
+// AgentTrust sets a helper's accept_caged through its machine's
+// shrooms-agent, found on the list's mesh: find is the mesh's names.
+func AgentTrust(find func(machine, mesh string) (netip.Addr, bool), port int) func(mesh, agent string, on bool) error {
+	client := &http.Client{Timeout: 15 * time.Second}
+	return func(mesh, agent string, on bool) error {
+		machine, session, _ := strings.Cut(agent, "/")
+		a, ok := find(machine, mesh)
+		if !ok {
+			return fmt.Errorf("%s is not on this list's mesh", machine)
+		}
+		body, _ := json.Marshal(map[string]bool{"accept_caged": on})
+		u := fmt.Sprintf("http://%s/v1/sessions/%s", netip.AddrPortFrom(a, uint16(port)), url.PathEscape(session))
+		req, _ := http.NewRequest("PATCH", u, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("%s's agent: %w", machine, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			var e struct{ Error string }
+			json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&e)
+			if e.Error == "" {
+				e.Error = resp.Status
+			}
+			return fmt.Errorf("%s: %s", agent, e.Error)
+		}
+		return nil
 	}
 }
 
