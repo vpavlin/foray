@@ -172,6 +172,20 @@ func serve(args []string) error {
 		return err
 	}
 	lns = append(lns, listener{ln, "", true})
+	// Each list's own socket, in its session's directory, for a caged session.
+	for _, l := range cfg.Lists {
+		if l.Socket == "" {
+			continue
+		}
+		os.MkdirAll(filepath.Dir(l.Socket), 0o700)
+		os.Remove(l.Socket)
+		ul, err := net.Listen("unix", l.Socket)
+		if err != nil {
+			return fmt.Errorf("list %s: socket: %w", l.Name, err)
+		}
+		os.Chmod(l.Socket, 0o600)
+		lns = append(lns, listener{ul, "", true})
+	}
 
 	h := srv.Handler()
 	var servers []*http.Server
@@ -213,6 +227,7 @@ func mcpMain(args []string) error {
 	list := fs.String("list", "", "the list")
 	session := fs.String("session", os.Getenv("SHROOMS_AGENT_SESSION"), "the session the tools work for")
 	port := fs.Int("port", 7389, "the Foray service's port")
+	sock := fs.String("socket", "", "the list's socket, instead of loopback (a caged session)")
 	fs.Parse(args)
 	if *list == "" {
 		return fmt.Errorf("--list is needed")
@@ -220,7 +235,15 @@ func mcpMain(args []string) error {
 	if *session == "" {
 		*session = "foray-" + *list
 	}
-	return mcp.Serve(os.Stdin, os.Stdout, mcp.Client{Base: fmt.Sprintf("http://127.0.0.1:%d", *port), List: *list, Session: *session})
+	c := mcp.Client{Base: fmt.Sprintf("http://127.0.0.1:%d", *port), List: *list, Session: *session}
+	if *sock != "" {
+		c.Base = "http://foray"
+		c.HTTP = &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "unix", *sock)
+			}}}
+	}
+	return mcp.Serve(os.Stdin, os.Stdout, c)
 }
 
 // suggest is an agent's suggestion, sent to the machine that keeps the list.

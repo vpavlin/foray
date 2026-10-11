@@ -34,6 +34,10 @@ type ListConfig struct {
 	Session string `json:"session,omitempty"`
 	// SuggestFrom is who may suggest items: MACHINE/SESSION, or MACHINE/*.
 	SuggestFrom []string `json:"suggest_from,omitempty"`
+	// Socket is a unix socket the list is also served on, as this machine:
+	// put it in the session's directory, which a cage mounts, so a caged
+	// session's tools reach the service without the machine's loopback.
+	Socket string `json:"socket,omitempty"`
 }
 
 var listName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
