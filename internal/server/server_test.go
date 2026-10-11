@@ -286,3 +286,21 @@ func TestTheContextIsThePeoples(t *testing.T) {
 		t.Fatalf("another mesh changed the context: %d", code)
 	}
 }
+
+// "analyze" leaves the kind of help to the session.
+func TestAnalyzeLeavesItToTheSession(t *testing.T) {
+	f := newFixture(t)
+	_, it := f.call(t, f.home, "POST", "/v1/lists/home/items", store.New{Title: "Makerfair Brno"}, nil)
+	f.told()
+	id := it["id"].(string)
+	if code, _ := f.call(t, f.home, "POST", "/v1/lists/home/items/"+id+"/ask", map[string]string{"kind": "analyze"}, nil); code != 200 {
+		t.Fatalf("analyze: %d", code)
+	}
+	if told := f.told(); len(told) != 1 || !strings.Contains(told[0], "Work out what would help") {
+		t.Fatalf("the session was told: %v", told)
+	}
+	f.call(t, f.home, "POST", "/v1/lists/home/items/"+id+"/ask", map[string]string{"kind": "find out"}, nil)
+	if told := f.told(); len(told) != 1 || !strings.Contains(told[0], "ask the agent that fits") {
+		t.Fatalf("find out: %v", told)
+	}
+}

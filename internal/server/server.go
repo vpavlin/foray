@@ -396,8 +396,14 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request, l *list, by string)
 		fail(w, http.StatusBadRequest, err)
 		return
 	}
-	s.tell(l, by, fmt.Sprintf("[foray %s] %s %s — on %q (item %s). Get it done: ask the agent that fits, record it with record_help.",
-		l.conf.Name, by, text, it.Title, it.ID))
+	if kind == "analyze" {
+		// The person leaves it to the session what, if anything, would help.
+		s.tell(l, by, fmt.Sprintf("[foray %s] %s %s — on %q (item %s). Work out what would help with it (find out, compare, draft, plan — or nothing), do that the way you would if asked, and say what you did in a comment. If nothing would help, say why in one line.",
+			l.conf.Name, by, text, it.Title, it.ID))
+	} else {
+		s.tell(l, by, fmt.Sprintf("[foray %s] %s %s — on %q (item %s). Get it done: ask the agent that fits, record it with record_help.",
+			l.conf.Name, by, text, it.Title, it.ID))
+	}
 	writeJSON(w, http.StatusOK, it)
 }
 

@@ -63,6 +63,12 @@ You get: `[foray home] … asks for find out: … — on "…" (item ID)`.
 4. If the answer leads to an obvious next item, say so in a comment rather
    than adding it.
 
+**analyze** is a person leaving it to you: read the item, its notes and the
+context, and decide what would help — usually one of the kinds below, run as
+above; sometimes two (find out, then plan); sometimes nothing, which you say
+in one line ("Nothing to look up here — it's a reminder"). Say in a comment
+what you did and why. Don't ask them which kind they meant.
+
 Kinds: **find out** (a fact), **compare** (options and a recommendation),
 **draft** (a message or email they will send themselves), **plan** (steps;
 offer them as a comment, add them as items only if asked).

@@ -584,7 +584,7 @@ Item {
                         visible: root.current && root.current.session !== ""
                         Layout.fillWidth: true; spacing: 8
                         Repeater {
-                            model: [["find out", "find out"], ["compare", "compare options"], ["draft", "draft a message"], ["plan", "plan the steps"]]
+                            model: [["analyze", "analyze"], ["find out", "find out"], ["compare", "compare options"], ["draft", "draft a message"], ["plan", "plan the steps"]]
                             delegate: Rectangle {
                                 radius: 12; implicitHeight: 26; implicitWidth: helpLabel.implicitWidth + 22
                                 color: "transparent"; border.color: cViolet
