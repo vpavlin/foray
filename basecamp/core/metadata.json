@@ -1,0 +1,16 @@
+{
+  "name": "foray_core",
+  "display_name": "Foray Core",
+  "version": "0.1.0",
+  "type": "core",
+  "interface": "universal",
+  "category": "productivity",
+  "description": "Reaches Foray lists on the machines of your Shrooms meshes, for the Foray view: finds them, reads them, and writes to them. A Basecamp view may not open a connection; this runs in its own process and can.",
+  "main": "foray_core_plugin",
+  "dependencies": [],
+  "nix": {
+    "packages": { "build": [], "runtime": [] },
+    "external_libraries": [],
+    "cmake": { "find_packages": [], "extra_sources": [], "extra_include_dirs": [], "extra_link_libraries": [] }
+  }
+}

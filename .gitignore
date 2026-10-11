@@ -1,2 +1,4 @@
 /foray
 *.jsonl
+/basecamp/test/out/
+result*

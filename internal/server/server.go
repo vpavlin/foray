@@ -142,6 +142,7 @@ func (s *Server) visible(r *http.Request, name string) (*list, bool) {
 // Handler is the API.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/whoami", s.whoami)
 	mux.HandleFunc("GET /v1/lists", s.getLists)
 	mux.HandleFunc("GET /v1/lists/{list}", s.withList(s.getList))
 	mux.HandleFunc("GET /v1/lists/{list}/changes", s.withList(s.changes))
@@ -184,7 +185,7 @@ type listInfo struct {
 	Name    string         `json:"name"`
 	Title   string         `json:"title"`
 	Mesh    string         `json:"mesh"`
-	Session string         `json:"session,omitempty"`
+	Session string         `json:"session"`
 	Seq     int64          `json:"seq"`
 	Counts  map[string]int `json:"counts"`
 }
@@ -200,6 +201,16 @@ func info(l *list) listInfo {
 	}
 	return listInfo{Name: l.conf.Name, Title: title, Mesh: l.conf.Mesh, Session: l.conf.Session,
 		Seq: l.store.Seq(), Counts: counts}
+}
+
+// whoami is what this service calls the caller, and whether it may write:
+// an app tells "you" from somebody else by it, and says up front that a
+// device the mesh does not know can only read.
+func (s *Server) whoami(w http.ResponseWriter, r *http.Request) {
+	name := s.caller(r)
+	wh := whereOf(r)
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "mesh": wh.mesh, "local": wh.local,
+		"can_write": name != "", "machine": s.Self()})
 }
 
 func (s *Server) getLists(w http.ResponseWriter, r *http.Request) {
@@ -231,9 +242,18 @@ func (s *Server) getList(w http.ResponseWriter, r *http.Request, l *list, _ stri
 		"asks": asks, "suggest_from": allowed})
 }
 
+// changes is what happened after since. When the caller's since is not one
+// this list can continue from — ahead of it, as after the log was replaced,
+// or behind what it still keeps, once old changes are compacted away — the
+// answer is {"reset": true}: read the whole list again. A phone that was off
+// for a week must never miss changes silently.
 func (s *Server) changes(w http.ResponseWriter, r *http.Request, l *list, _ string) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	ev, seq := l.store.Since(since)
+	if since > seq || (since > 0 && since < l.store.Oldest()-1) {
+		writeJSON(w, http.StatusOK, map[string]any{"seq": seq, "reset": true, "events": []any{}})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"seq": seq, "events": ev})
 }
 
