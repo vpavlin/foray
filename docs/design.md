@@ -15,7 +15,7 @@ A2A tasks for asking agents, and Scala for the calendar.
 ## 1. Pieces
 
 ```
-   phone (Foray app) ─┐                    ┌─ home-todo  (an agent session on the same machine)
+   phone (Foray app) ─┐                    ┌─ foray-home  (an agent session on the same machine)
    wife's phone ─────┼── mesh ── todo ────┤     triage, help, conversation
    Basecamp (Todo) ──┘          service   └─ other sessions (research, drafts) via A2A
                                   │
@@ -25,7 +25,7 @@ A2A tasks for asking agents, and Scala for the calendar.
 | Piece | What it is |
 |---|---|
 | **foray service** | A small Go daemon on one machine: holds the lists, serves them on the machine's mesh addresses. The data. |
-| **Todo session** | One shrooms-agent session per list (`home-todo`), with the list's tools. The assistant. |
+| **Foray session** | One shrooms-agent session per list (`foray-home`), with the list's tools. The assistant. |
 | **foray MCP** | `foray mcp --list home`: the tools the session works the list with, wired into the session by its own `.mcp.json`. |
 | **Foray apps** | A Basecamp module (view + core) and an Android app. Find every list on every mesh the device is on. |
 | **Scala bridge** | Phase 2: timed items as events in a calendar the household shares; free/busy read back. |
@@ -63,7 +63,7 @@ Stored by the service in one file per list (SQLite, or an append-only JSON log
 folded into state — the second keeps a later move to multi-writer sync
 honest). Backed up like any file.
 
-## 4. The Todo session
+## 4. The Foray session
 
 A normal shrooms-agent session, created once per list:
 
@@ -95,7 +95,7 @@ whoever added it, or an offer of help. Its question and its offer appear on
 the item in the app.
 
 **Agents add through the session.** An agent that thinks something belongs on
-the list sends `home-todo` a task ("the domain renews on the 20th"). The
+the list sends `foray-home` a task ("the domain renews on the 20th"). The
 session decides whether and how to add it — new item, a note on an existing
 one, or nothing. Items it adds land in `inbox`, marked who suggested them;
 only a person moves them on.
@@ -165,7 +165,7 @@ restarts it, and sync tested against a fresh second node, not trusted from a
 status line. Phones need Scala 0.9.115+ and the Loam app.
 
 **Clock.** The agent scheduler from shrooms' calendar analysis — a turn sent
-to the session at a time — gives `home-todo` its own follow-ups;
+to the session at a time — gives `foray-home` its own follow-ups;
 `getPendingReminders()` is Scala's own view of what is coming.
 
 ## 7. The apps
@@ -206,13 +206,13 @@ Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 
 ### Agents adding, and who checks
 
-"An agent asks the Todo session, and the session decides" stays the flow, but
+"An agent asks the Foray session, and the session decides" stays the flow, but
 the **gate is not the session's judgement** — a model can be talked into
 anything. Suggestions go to the foray service first, as an A2A agent of its
 own (`jimmy-crib/foray`): it identifies the caller the way shrooms-agent does
 (the machine from the mesh, the session from what its agent says), checks the
 allow list, puts the suggestion in the inbox marked with who sent it, and
-hands it to `home-todo` to triage. A caller not on the list is refused, and
+hands it to `foray-home` to triage. A caller not on the list is refused, and
 appears in the app as "wants to add items — allow?", the way refused file
 senders do in Shrooms Agents.
 
