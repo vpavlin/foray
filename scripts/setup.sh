@@ -3,7 +3,7 @@
 # user whose shrooms-agent runs the session. Safe to run again.
 #
 #   scripts/setup.sh --list home --mesh home --title Home \
-#       [--model venice/deepseek-v4-1-flash] [--suggest-from laptop/shrooms] [--no-session]
+#       [--model venice/deepseek-v4-1-flash] [--suggest-from laptop/shrooms] [--no-session] [--no-cage]
 #
 # What it does:
 #   ~/.local/bin/foray                      the binary (built here if Go is present)
@@ -12,11 +12,12 @@
 #                                           bin/foray (for a cage), and the list's socket
 #   ~/.pi/agent/mcp.json                    a "foray" entry (only the list's session may use it)
 #   ~/.config/systemd/user/foray.service    the service, enabled and (re)started
-#   the session foray-<list>, created on this machine's shrooms-agent, limited to the list's mesh
+#   the session foray-<list>, created on this machine's shrooms-agent, limited to the list's mesh,
+#                                           in a cage when podman is here
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-list="" mesh="" title="" model="venice/deepseek-v4-1-flash" suggest="" session=1
+list="" mesh="" title="" model="venice/deepseek-v4-1-flash" suggest="" session=1 cage=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --list) list=$2; shift 2 ;;
@@ -25,6 +26,7 @@ while [ $# -gt 0 ]; do
         --model) model=$2; shift 2 ;;
         --suggest-from) suggest=$2; shift 2 ;;
         --no-session) session=0; shift ;;
+        --no-cage) cage=0; shift ;;
         *) echo "unknown: $1" >&2; exit 2 ;;
     esac
 done
@@ -87,13 +89,25 @@ PY
 
 echo "==> the service"
 mkdir -p "$HOME/.config/systemd/user"
+# Foray reads the daemon's status for who is calling. A user just added to the
+# socket's group has it only in new logins, and the user's systemd started
+# before — so the service takes the group itself, whenever there is one.
+exec_start="%h/.local/bin/foray serve"
+sock=/run/shrooms/shrooms.sock
+status() { curl -sf --max-time 5 --unix-socket "$sock" http://x/status; }
+group=$(stat -c %G "$(dirname "$sock")" 2>/dev/null || true)
+if [ -n "$group" ] && [ "$group" != root ] && id -nG "$USER" | tr ' ' '\n' | grep -qx "$group"; then
+    exec_start="/usr/bin/sg $group -c '$HOME/.local/bin/foray serve'"
+    status() { sg "$group" -c "curl -sf --max-time 5 --unix-socket $sock http://x/status"; }
+fi
+status >/dev/null 2>&1 || echo "   NOTE: the shrooms daemon's socket is not readable: Foray serves on loopback only. Set socket_group in the daemon's config and join that group" >&2
 cat > "$HOME/.config/systemd/user/foray.service" <<UNIT
 [Unit]
 Description=Foray: the household's lists on the mesh
 After=network-online.target
 
 [Service]
-ExecStart=%h/.local/bin/foray serve
+ExecStart=$exec_start
 Restart=always
 RestartSec=5
 
@@ -108,20 +122,27 @@ curl -sf "http://127.0.0.1:7389/v1/lists" >/dev/null && echo "   serving" || { e
 
 if [ "$session" = 1 ]; then
     echo "==> the session $name (pi, limited to mesh $mesh)"
-    addr=$(curl -s --unix-socket /run/shrooms/shrooms.sock http://x/status |
+    addr=$(status |
         python3 -c "import json,sys; print([m['overlay'] for m in json.load(sys.stdin)['meshes'] if m['label']=='$mesh'][0])" 2>/dev/null || true)
     if [ -z "$addr" ]; then
         echo "   this machine is not on mesh $mesh yet: the session is created once it is (run this again)"
     else
         agent="http://[$addr]:7387"
-        if curl -sf "$agent/v1/sessions" | python3 -c "import json,sys; sys.exit(0 if any(s['name']=='$name' for s in json.load(sys.stdin)) else 1)"; then
+        if curl -sf "$agent/v1/sessions" | python3 -c "import json,sys; sys.exit(0 if any(s['name']=='$name' for s in json.load(sys.stdin)['sessions']) else 1)"; then
             echo "   exists"
         else
+            caged=""
+            if [ "$cage" = 1 ] && command -v podman >/dev/null; then caged=',"cage":{}'; fi
             curl -sf -X POST "$agent/v1/sessions" -H 'Content-Type: application/json' \
-                -d "{\"name\":\"$name\",\"dir\":\"$dir\",\"harness\":\"pi\",\"keep_running\":true}" >/dev/null && echo "   created"
+                -d "{\"name\":\"$name\",\"dir\":\"$dir\",\"harness\":\"pi\",\"keep_running\":true$caged}" >/dev/null &&
+                echo "   created${caged:+, in a cage}" || { echo "   could not create it: see the machine's shrooms-agent" >&2; exit 1; }
         fi
         curl -sf -X PATCH "$agent/v1/sessions/$name" -H 'Content-Type: application/json' \
             -d "{\"meshes\":[\"$mesh\"]}" >/dev/null && echo "   limited to $mesh" || echo "   NOTE: could not limit it to $mesh — do it in Shrooms Agents (meshes)"
     fi
+fi
+if [ "$session" = 1 ] && [ -n "${addr:-}" ] && command -v firewall-cmd >/dev/null && systemctl -q is-active firewalld; then
+    echo "   NOTE: firewalld is on. If the mesh's interface is in no zone, let the list's port in on the mesh address:"
+    echo "     sudo firewall-cmd --permanent --add-rich-rule='rule family=\"ipv6\" destination address=\"$addr/128\" port port=\"7389\" protocol=\"tcp\" accept' && sudo firewall-cmd --reload"
 fi
 echo "done."

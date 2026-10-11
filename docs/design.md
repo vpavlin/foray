@@ -1,6 +1,6 @@
 # Foray — design
 
-**Status:** draft for review, 2026-10-11. Nothing built.
+**Status:** built, 2026-10-11; running on proteus with the list on the office mesh while it is tried out.
 
 A todo list for a household — "buy XYZ", "schedule the tire change" — that two
 people share from their phones and desktops, with an agent session that knows
@@ -198,7 +198,7 @@ Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 | | |
 |---|---|
 | **Name** | **Foray** (Shrooms Foray): a mushroom foray is the trip out to gather — errands, shopping, bringing things home |
-| **Host** | jimmy-crib |
+| **Host** | proteus (moved from jimmy-crib the same day: it already had the Venice key, and has podman for the session's cage) |
 | **Storage** | an append-only event log per list (JSON lines), folded into state and snapshotted. One machine today, and the same log is what a later multi-writer sync (phase 4) replicates, so nothing is rewritten for it |
 | **Triage** | pi on a cheap Venice model — `deepseek-v4-1-flash` or `z-ai-glm-5-3-flash`, what pi5, proteus and scribe already use |
 | **People** | vpavlin, and his wife: shrooms and the Foray app on her devices, on the home mesh |
@@ -209,7 +209,7 @@ Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 "An agent asks the Foray session, and the session decides" stays the flow, but
 the **gate is not the session's judgement** — a model can be talked into
 anything. Suggestions go to the foray service first, as an A2A agent of its
-own (`jimmy-crib/foray`): it identifies the caller the way shrooms-agent does
+own (`proteus/foray`): it identifies the caller the way shrooms-agent does
 (the machine from the mesh, the session from what its agent says), checks the
 allow list, puts the suggestion in the inbox marked with who sent it, and
 hands it to `foray-home` to triage. A caller not on the list is refused, and
@@ -220,14 +220,15 @@ senders do in Shrooms Agents.
 
 Two things to do first, neither of them code:
 
-1. **jimmy-crib is on the office mesh only.** The home list has to live on
-   the home mesh, so jimmy-crib joins it — an invite from the laptop (whose
-   admin key the home mesh is), and a restart of jimmy-crib's daemon, which
-   carries Jimmy and the publisher. Planned, not ad hoc.
+1. **proteus is on the office mesh only**, and the list lives there while it
+   is tried out (its label for the office mesh is `default`). For the
+   household, proteus joins the home mesh — an invite from the laptop (whose
+   admin key the home mesh is) and a restart of its daemon — and the list's
+   `mesh` changes to `home`.
 2. **Every agent session on a home-mesh machine is visible from the home
    mesh** unless limited: a session with no `meshes` setting serves every
    mesh its machine is on. The laptop is on the home mesh today, and so will
-   jimmy-crib be — so before her phone joins, every session on those machines
+   proteus be — so before her phone joins, every session on those machines
    that is not meant for the household gets `meshes: [office]` (or whichever).
    Otherwise her phone could open them and drive them. Worth a default in
    shrooms-agent ("new sessions serve only these meshes"); until then, by hand.
@@ -246,8 +247,9 @@ Chosen: **Foray**.
 
 ## 12. Open questions
 
-1. **Venice key** for pi on jimmy-crib: the one pi5, proteus and scribe use,
-   or a key of its own (its own budget, its own "runs out" warning)?
+1. **Venice key:** the session uses proteus's, shared with the proteus
+   session (a daily DIEM allowance). Its own key, with its own budget, if
+   triage ever competes with proteus.
 2. **Notifications on the wife's phone:** the Foray app's own, or Scala
    reminders only?
 3. **`putEvent` public:** the bridge is simpler and safer with it; ask Scala

@@ -23,12 +23,12 @@ apps find agents, and shows what it finds grouped by mesh.
 What the service calls the caller — how an app tells "you" from somebody else
 in `added_by` and comment `by`, and knows up front whether it can write:
 ```json
-{"name": "phone.home", "mesh": "home", "local": false, "can_write": true, "machine": "jimmy-crib"}
+{"name": "phone.home", "mesh": "home", "local": false, "can_write": true, "machine": "proteus"}
 ```
 
 ### `GET /v1/lists`
 ```json
-{"machine": "jimmy-crib",
+{"machine": "proteus",
  "lists": [{"name": "home", "title": "Home", "mesh": "home", "session": "foray-home",   // "" when the list has no assistant
             "seq": 41, "counts": {"open": 7, "waiting": 2, "done": 30, "suggested": 1}}]}
 ```
