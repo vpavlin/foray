@@ -7,6 +7,7 @@ Item {
     id: top
     width: 1400; height: 860
     property string base: "http://127.0.0.1:" + Qt.application.arguments[Qt.application.arguments.length - 2]
+    readonly property var demoQr: ["1111111010111111", "1000001001100001", "1011101110101101", "1011101001001101", "1000001011000001", "1111111010111111"]
     property string outDir: Qt.application.arguments[Qt.application.arguments.length - 1]
 
     function http(method, path, body) {
@@ -47,7 +48,9 @@ Item {
                 var milk = view.items.filter(function (i) { return i.title === "Milk and bread" })[0]
                 view.write("PATCH", "/items/" + milk.id, { state: "done" })
                 console.error("DONE=" + JSON.parse(top.http("GET", "/v1/lists/home")).items.filter(function (i) { return i.state === "done" }).length)
-                Qt.quit()
+                view.pairing = { link: "foray://add?address=fd7b::1&list=home", qr: JSON.parse(top.http("GET", "/v1/lists/home")).items.length ? top.demoQr : [] }
+                settle.next = function () { top.shot("foray-pair.png", function () { Qt.quit() }) }
+                settle.restart()
             }) }
             settle.restart()
         }

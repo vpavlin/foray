@@ -248,3 +248,15 @@ func TestWhoAmIAndAReset(t *testing.T) {
 		t.Fatal("session missing from the list")
 	}
 }
+
+func TestPairingLink(t *testing.T) {
+	f := newFixture(t)
+	if code, _ := f.call(t, f.home, "GET", "/v1/lists/home/pair", nil, nil); code != 409 {
+		t.Fatalf("a pairing link without an address: %d", code)
+	}
+	f.s.Addr = func(string) (netip.Addr, bool) { return netip.MustParseAddr("fd7b::1"), true }
+	_, p := f.call(t, f.home, "GET", "/v1/lists/home/pair", nil, nil)
+	if p["link"] != "foray://add?address=fd7b::1&list=home" || len(p["qr"].([]any)) < 21 {
+		t.Fatalf("pair: %v", p["link"])
+	}
+}

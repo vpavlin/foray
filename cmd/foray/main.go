@@ -134,12 +134,13 @@ func serve(args []string) error {
 		h, _ := os.Hostname()
 		return h
 	}
-	srv.Notify = server.AgentNotifier(func(m string) (netip.Addr, bool) {
+	srv.Addr = func(m string) (netip.Addr, bool) {
 		addrMu.Lock()
 		defer addrMu.Unlock()
 		a, ok := addrs[m]
 		return a, ok
-	}, cfg.AgentPort, log)
+	}
+	srv.Notify = server.AgentNotifier(srv.Addr, cfg.AgentPort, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

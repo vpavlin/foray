@@ -107,6 +107,8 @@ Item {
     property int seq: 0
     property string selectedId: ""
     property string said: ""
+    // The list's pairing link and its QR, while it is shown.
+    property var pairing: null
 
     function listPath(sub) { return "/v1/lists/" + encodeURIComponent(current.name) + (sub || "") }
 
@@ -265,6 +267,18 @@ Item {
                 Layout.fillWidth: true
                 Text { text: root.current ? root.current.title : ""; color: cBone; font.pixelSize: 22 }
                 Item { Layout.fillWidth: true }
+                Text {
+                    text: "add a phone"
+                    color: cSky; font.pixelSize: 12
+                    MouseArea {
+                        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            var p = root.call("foray_core", "get", [root.current.address, root.listPath("/pair")])
+                            root.pairing = (p && !p.error) ? p : null
+                            if (!p || p.error) root.said = p ? p.error : "no answer"
+                        }
+                    }
+                }
                 Text {
                     visible: root.pendingSuggestions > 0
                     text: root.pendingSuggestions + " suggestion" + (root.pendingSuggestions > 1 ? "s" : "") + " with the assistant"
@@ -552,6 +566,56 @@ Item {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // A phone scans this to find the list: the Foray app, on a phone that is
+    // on the same Shrooms mesh.
+    Rectangle {
+        anchors.fill: parent
+        visible: root.pairing !== null
+        color: "#cc000000"
+        MouseArea { anchors.fill: parent; onClicked: root.pairing = null }
+        Rectangle {
+            anchors.centerIn: parent
+            width: 360; height: 470; radius: 14
+            color: cPanel; border.color: cLine
+            ColumnLayout {
+                anchors.fill: parent; anchors.margins: 20
+                spacing: 12
+                Text { text: "Add a phone to " + (root.current ? root.current.title : ""); color: cBone; font.pixelSize: 17 }
+                Text {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    text: "On the phone: install Shrooms and join this mesh, then open Foray and scan this."
+                    color: cAsh; font.pixelSize: 12
+                }
+                Canvas {
+                    id: pairQr
+                    Layout.alignment: Qt.AlignHCenter
+                    width: 280; height: 280
+                    readonly property var rows: root.pairing ? root.pairing.qr : []
+                    onRowsChanged: requestPaint()
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.reset()
+                        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, width, height)
+                        var n = rows.length
+                        if (!n) return
+                        var cell = Math.floor(width / (n + 8)), off = Math.floor((width - cell * n) / 2)
+                        ctx.fillStyle = "#000000"
+                        for (var y = 0; y < n; y++)
+                            for (var x = 0; x < n; x++)
+                                if (rows[y].charAt(x) === "1") ctx.fillRect(off + x * cell, off + y * cell, cell, cell)
+                    }
+                }
+                TextEdit {
+                    Layout.fillWidth: true; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere
+                    text: root.pairing ? root.pairing.link : ""
+                    color: cAsh; font.pixelSize: 10
+                }
+                Text { text: "close"; color: cAsh; font.pixelSize: 12; Layout.alignment: Qt.AlignHCenter
+                       MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.pairing = null } }
             }
         }
     }

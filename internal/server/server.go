@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/vpavlin/foray/internal/store"
+	"rsc.io/qr"
 )
 
 // Headers callers use.
@@ -69,13 +70,15 @@ type Server struct {
 	// Notify tells a list's session something; set by main to post to
 	// shrooms-agent, and by tests to record.
 	Notify func(l ListConfig, text string)
+	// Addr is this machine's address on a mesh.
+	Addr func(mesh string) (netip.Addr, bool)
 }
 
 // New opens every configured list.
 func New(cfg *Config, cfgPath string, log *slog.Logger) (*Server, error) {
 	s := &Server{cfg: cfg, cfgPath: cfgPath, lists: map[string]*list{}, log: log,
 		Who: func(netip.Addr) string { return "" }, Self: func() string { return "" },
-		Notify: func(ListConfig, string) {}}
+		Notify: func(ListConfig, string) {}, Addr: func(string) (netip.Addr, bool) { return netip.Addr{}, false }}
 	for _, lc := range cfg.Lists {
 		st, err := store.Load(cfg.Data + "/" + lc.Name + ".jsonl")
 		if err != nil {
@@ -146,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/lists", s.getLists)
 	mux.HandleFunc("GET /v1/lists/{list}", s.withList(s.getList))
 	mux.HandleFunc("GET /v1/lists/{list}/changes", s.withList(s.changes))
+	mux.HandleFunc("GET /v1/lists/{list}/pair", s.withList(s.pair))
 	mux.HandleFunc("POST /v1/lists/{list}/items", s.withWriter(s.add))
 	mux.HandleFunc("PATCH /v1/lists/{list}/items/{id}", s.withWriter(s.update))
 	mux.HandleFunc("POST /v1/lists/{list}/items/{id}/comments", s.withWriter(s.comment))
@@ -255,6 +259,36 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request, l *list, _ stri
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"seq": seq, "events": ev})
+}
+
+// pair is what a phone scans to find the list: a foray:// link with this
+// machine's address on the list's mesh, and the QR of it as rows of 0 and 1
+// for an app to draw. Nothing secret in it — the mesh is the access control,
+// and a phone that is not on it can do nothing with the address.
+func (s *Server) pair(w http.ResponseWriter, r *http.Request, l *list, _ string) {
+	a, ok := s.Addr(l.conf.Mesh)
+	if !ok {
+		fail(w, http.StatusConflict, fmt.Errorf("this machine is not on the %s mesh", l.conf.Mesh))
+		return
+	}
+	link := "foray://add?address=" + a.String() + "&list=" + l.conf.Name
+	code, err := qr.Encode(link, qr.M)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	rows := make([]string, code.Size)
+	for y := range rows {
+		b := make([]byte, code.Size)
+		for x := range b {
+			b[x] = '0'
+			if code.Black(x, y) {
+				b[x] = '1'
+			}
+		}
+		rows[y] = string(b)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"link": link, "address": a.String(), "qr": rows})
 }
 
 // isSession is whether by is the list's own session, which is not told about

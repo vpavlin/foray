@@ -54,6 +54,11 @@ replaced) or behind what it still keeps (old changes compacted away) — the
 answer is `{"seq": N, "reset": true, "events": []}`: read the whole list again
 and carry on from `N`.
 
+### `GET /v1/lists/{list}/pair`
+What a phone scans to find the list: `{"link": "foray://add?address=fd…&list=home",
+"address": "fd…", "qr": ["1110…", …]}` — the QR as rows of 0 and 1 for the app
+to draw. 409 when this machine is not on the list's mesh.
+
 ## Item
 
 ```json
