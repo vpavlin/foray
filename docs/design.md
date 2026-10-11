@@ -117,19 +117,56 @@ a person sends, buys, books.
 
 ## 6. Scala — phase 2
 
-*Pending answers from Scala's author (jimmy-crib/vpavlin); filled in from
-them.*
+From Scala's author (jimmy-crib/vpavlin, 2026-10-11), checked against Scala
+core 0.12.4. He has offered to build this bridge once the design is approved.
 
-1. **Out:** an item with a time becomes an event in a calendar the household
-   shares, so it shows in Scala on both phones with its reminder.
-2. **In:** the session reads the calendar to propose times ("Thursday after
-   5 looks free").
-3. **Round trip:** an edit in Scala (moved to Friday) is matched back to the
-   item through a key on the event.
-4. **Clock:** the agent scheduler from shrooms' calendar analysis — a turn
-   sent to the session at a time — gives `home-todo` its own follow-ups.
+**The runtime.** Not the old `hub/scala-hub.sh` (logoscore, the 0.2 stack):
+`logosctl`, Basecamp 0.3's runtime, in an isolated session on the list's
+machine — `HOME=<dir>/home LOGOSCTL_CONFIG_DIR=<dir>/cfg logosctl daemon
+start --detach`, the `delivery_module`, `ble_mesh`, `loam_core` and `scala`
+packages installed, `scala` loaded, then `logosctl call scala <method> …`.
+His VPS hub runs this way.
 
-The cost is a headless Scala hub on the list's machine.
+**The calendar.** The service **owns** a "Home" calendar (`createCalendar`,
+with an empty identity so it signs with its own device key and never waits on
+a locked Loam), sets it `collab` so every editor edits every event
+(`updateCalendarMeta`), and gives each person an editor invite
+(`createInvite(calId, "editor")` → a `scala://join…&inv=…` link they open
+once in Scala). Joining a calendar of theirs instead would leave the service
+able to edit only its own events.
+
+**Out.** An item with a time becomes an event written with
+**`putEvent(calId, "todo-<itemId>", event)`**: create-or-update under an id
+derived from the item, so it is idempotent and the id itself is the link.
+`putEvent` is new in 0.12.4 and only on the LAN test repo so far; until it is
+public, `createEvent` plus a `fields.todoId` lookup. The phones schedule a
+local reminder for every event, whoever wrote it: `reminderMin` before the
+start (unset is 10 minutes, 0 is none).
+
+**Round trip.** Phone edits rebuild an event from a fixed key list and
+**drop unknown top-level keys**; `fields` survive (declare them in the
+calendar's schema to have them shown). So the item is found from the event's
+id, and anything else rides in `fields`. **A deleted id is deleted forever**
+(a tombstone): a done item edits its event (a title prefix, `fields.done`),
+never deletes and re-creates it.
+
+**In.** `listEvents(calId)` returns raw events — no range query, recurring
+events as one event with a `recur` rule. Free slots mean listing everything
+and expanding recurrences here: the phone app's `src/lib/recur.ts` is small
+and pure, and worth porting. In the household's time zone: times are UTC ms,
+but all-day and recurrence are local.
+
+**Running it.** Calls can time out (20 s) while storage is busy: retry, and
+never retry a create without checking (another reason for `putEvent`). An
+offline hub reconciles on reconnect, in seconds to minutes. His hub once had
+its delivery layer wedge silently ("request queue full") while reporting
+Connected, so: a watchdog on `delivery_module getConnectionStatus` that
+restarts it, and sync tested against a fresh second node, not trusted from a
+status line. Phones need Scala 0.9.115+ and the Loam app.
+
+**Clock.** The agent scheduler from shrooms' calendar analysis — a turn sent
+to the session at a time — gives `home-todo` its own follow-ups;
+`getPendingReminders()` is Scala's own view of what is coming.
 
 ## 7. The apps
 
@@ -167,3 +204,5 @@ Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 5. **Notifications on the wife's phone:** the Todo app's own, or through
    Scala reminders only?
 6. **Agents adding:** every agent on the mesh, or only sessions you list?
+7. **`putEvent` public:** the bridge is simpler and safer with it; ask Scala
+   to ship 0.12.4 publicly before phase 3.
