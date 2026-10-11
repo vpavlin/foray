@@ -247,6 +247,8 @@ Item {
         var s = String(call("foray_core", "getPref", ["sort"]) || ""), g = String(call("foray_core", "getPref", ["group"]) || "")
         if (["due", "created", "updated", "title"].indexOf(s) >= 0) sortBy = s
         if (["state", "none", "who", "tag"].indexOf(g) >= 0) groupBy = g
+        var p = String(call("foray_core", "getPref", ["panes"]) || "").split(",")
+        if (p.length === 2 && +p[0] > 0 && +p[1] > 0) { leftWidth = +p[0]; rightWidth = +p[1] }
     }
     function dueKey(it) { return it.due ? it.due : "9999" }
     function cmp(a, b) {
@@ -335,17 +337,34 @@ Item {
     // --- the page ------------------------------------------------------------------
     Rectangle { anchors.fill: parent; color: cVoid }
 
-    RowLayout {
+    // Three panes the dividers between resize; each device keeps its widths.
+    property real leftWidth: 230
+    property real rightWidth: 380
+    function savePanes() {
+        call("foray_core", "setPref", ["panes", Math.round(listsPane.width) + "," + Math.round(itemPane.width)])
+    }
+
+    SplitView {
+        id: panes
         anchors.fill: parent
         anchors.margins: 18
-        spacing: 16
+        orientation: Qt.Horizontal
+        onResizingChanged: if (!resizing) root.savePanes()
+        handle: Item {
+            implicitWidth: 16
+            Rectangle {
+                anchors.centerIn: parent
+                width: 2; height: 44; radius: 1
+                color: SplitHandle.pressed ? cPhosphor : (SplitHandle.hovered ? cAsh : cLine)
+            }
+        }
 
         // The lists, by mesh.
         ColumnLayout {
-            Layout.preferredWidth: 230
-            Layout.maximumWidth: 230
-            Layout.fillWidth: false
-            Layout.fillHeight: true
+            id: listsPane
+            SplitView.preferredWidth: root.leftWidth
+            SplitView.minimumWidth: 140
+            SplitView.maximumWidth: 480
             spacing: 8
             Text { text: "Foray"; color: cBone; font.pixelSize: 24; font.weight: Font.DemiBold }
             Text {
@@ -388,8 +407,8 @@ Item {
 
         // The list.
         ColumnLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            SplitView.fillWidth: true
+            SplitView.minimumWidth: 320
             spacing: 10
             visible: root.current !== null
 
@@ -589,8 +608,9 @@ Item {
 
         // One item.
         Rectangle {
-            Layout.preferredWidth: 380
-            Layout.fillHeight: true
+            id: itemPane
+            SplitView.preferredWidth: root.rightWidth
+            SplitView.minimumWidth: 300
             visible: root.selected !== null
             radius: 12; color: cPanel; border.color: cLine
             Flickable {
