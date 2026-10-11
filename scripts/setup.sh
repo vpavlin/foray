@@ -39,10 +39,11 @@ cfg="$HOME/.config/foray/config.json"
 echo "==> the binary"
 mkdir -p "$HOME/.local/bin" "$dir/bin" "$dir/.pi"
 if command -v go >/dev/null; then
-    go build -o "$HOME/.local/bin/foray" ./cmd/foray
+    go build -o "$HOME/.local/bin/.foray.new" ./cmd/foray && mv -f "$HOME/.local/bin/.foray.new" "$HOME/.local/bin/foray"
 fi
 [ -x "$HOME/.local/bin/foray" ] || { echo "no foray binary: install Go, or put one in ~/.local/bin" >&2; exit 1; }
-cp "$HOME/.local/bin/foray" "$dir/bin/foray"
+# Copied and renamed into place: the running tools hold the old one open.
+cp "$HOME/.local/bin/foray" "$dir/bin/.foray.new" && mv -f "$dir/bin/.foray.new" "$dir/bin/foray"
 
 echo "==> the list ($list on mesh $mesh)"
 mkdir -p "$(dirname "$cfg")"
@@ -93,7 +94,7 @@ echo "==> the session's browser"
 # machine starts one; installed in the cage once the session runs (below).
 mkdir -p "$dir/browser"
 cp browser/foray_browser.py "$dir/browser/"
-cp browser/foray-browser "$dir/bin/foray-browser"
+cp browser/foray-browser "$dir/bin/.foray-browser.new" && mv -f "$dir/bin/.foray-browser.new" "$dir/bin/foray-browser"
 python3 - "$dir/.pi/mcp.json" "$dir/bin/foray-browser" <<'PY2'
 import json, os, sys
 path, binp = sys.argv[1:]
