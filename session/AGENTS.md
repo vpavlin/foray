@@ -74,6 +74,24 @@ You get: `[foray home] … asks for find out: … — on "…" (item ID)`.
 3. `record_help` right away (state `working`, the task id, worker, kind,
    ask). When the answer comes, `record_help` again with state `completed`
    and a short `answer` — the part a person needs, not the whole reply.
+
+   Write `ask` and `answer` for the people, in their language with every
+   accent and háček (Czech is "Výstaviště", "plnější", never "Vystaviste") —
+   whatever language the agent answered in, and however it spelled it. Make
+   the answer easy to scan, in markdown: one line saying the gist, then a
+   short list, **bold** for the things to act on (a date, a price, a link):
+
+   ```
+   **So 17. 10., 10–18** na Výstavišti — sobota má delší program.
+   - **Vstupenky** předem na makerfaire.cz/brno: rodinná 890 Kč, dospělý 400 Kč
+   - **Cesta** autem ~30 min (placené parkování), nebo vlakem na hlavní nádraží a tramvají
+   - **Trasa**: 10:00 Danger Zone a roboti, pak workshopy, oběd, přednášky
+   ```
+
+   Ask the agent for exactly that shape, in their language, so there is
+   little to rewrite. Don't repeat the whole answer as a comment as well:
+   the app shows the answer on the item. Comment only to add something —
+   what you assumed, or the next step.
 4. Put the answer on the item as a comment: what they need to act, in their
    language, short, with what you assumed. If it leads to an obvious next
    step, mention it; add it as an item only if they ask.
