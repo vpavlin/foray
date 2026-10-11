@@ -3,7 +3,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export interface Machine { address: string; port: number }
-const K = { machines: "foray.machines", seq: "foray.seq", seen: "foray.seen", me: "foray.me" };
+const K = { machines: "foray.machines", seq: "foray.seq", seen: "foray.seen", me: "foray.me", drafts: "foray.drafts" };
 
 async function getJson<T>(k: string, fallback: T): Promise<T> {
   try { const v = await AsyncStorage.getItem(k); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
@@ -20,4 +20,7 @@ export const store = {
   setSeen: (s: Set<string>) => setJson(K.seen, [...s].slice(-1000)),
   me: () => getJson<Record<string, string>>(K.me, {}),
   setMe: (m: Record<string, string>) => setJson(K.me, m),
+  // Unsent notes, per item ("base|list|id" → text), so Back never loses what was typed.
+  drafts: () => getJson<Record<string, string>>(K.drafts, {}),
+  setDrafts: (d: Record<string, string>) => setJson(K.drafts, d),
 };

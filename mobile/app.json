@@ -3,20 +3,43 @@
     "name": "Foray",
     "slug": "foray",
     "scheme": "foray",
-    "version": "0.1.0",
-    "platforms": ["android"],
+    "version": "0.1.1",
+    "platforms": [
+      "android"
+    ],
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "android": {
       "package": "xyz.vpavlin.foray",
-      "versionCode": 1,
-      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#3D7A57" },
-      "permissions": ["POST_NOTIFICATIONS"]
+      "versionCode": 2,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3D7A57"
+      },
+      "permissions": [
+        "POST_NOTIFICATIONS"
+      ],
+      "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
       "./plugins/withReleaseSigning",
-      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }],
-      ["expo-notifications", { "color": "#3D7A57" }],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "buildArchs": [
+              "arm64-v8a"
+            ]
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#3D7A57"
+        }
+      ],
       "expo-background-task",
       "@react-native-community/datetimepicker"
     ]

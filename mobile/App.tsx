@@ -1,7 +1,7 @@
 // Foray: the household's shared lists. Plain words in the main flow: lists, things to do, who, when.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, AppState, Linking, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet,
+  Alert, AppState, BackHandler, Dimensions, Keyboard, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet,
   Text, TextInput, ToastAndroid, View,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -28,6 +28,32 @@ Notifications.setNotificationHandler({
 });
 
 type Open = { base: string; list: ListInfo };
+
+// Bottom padding that keeps inputs above the keyboard. With Android's edge-to-edge layout the window
+// often doesn't shrink for the keyboard; when it does, only the part it didn't cover is padded.
+function useKeyboardPad(): number {
+  const [pad, setPad] = useState(0);
+  useEffect(() => {
+    const full = Dimensions.get("window").height;
+    const show = Keyboard.addListener("keyboardDidShow", (e) => {
+      const shrunk = Math.max(0, full - Dimensions.get("window").height);
+      setPad(Math.max(0, e.endCoordinates.height - shrunk));
+    });
+    const hide = Keyboard.addListener("keyboardDidHide", () => setPad(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  return pad;
+}
+
+// Hardware Back closes the screen on top instead of leaving the app.
+function useBack(handler: () => void) {
+  const ref = useRef(handler);
+  ref.current = handler;
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => { ref.current(); return true; });
+    return () => sub.remove();
+  }, []);
+}
 
 export default function App() {
   return (
@@ -268,6 +294,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   const sec = useMemo(() => sections(items), [items]);
   const now = new Date();
   const selected = items.find((x) => x.id === sel) || null;
+  useBack(() => { if (!selected) onBack(); });
 
   const Row = ({ it }: { it: Item }) => {
     const b = dueBucket(it.due, now), done = it.state === "done" || it.state === "dropped";
@@ -302,6 +329,11 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
       <View style={s.card0}>{xs.map((it, i) => <View key={it.id} style={i > 0 && s.sep}><Row it={it} /></View>)}</View>
     </View>
   ) : null;
+
+  // The item is a screen in this window, not a Modal: a Modal is its own Android window, which the
+  // keyboard covers without resizing, hiding the reply box.
+  if (selected) return <ItemSheet base={base} list={list} item={selected} me={me} readOnly={readOnly} items={items}
+    onClose={() => setSel(null)} onChanged={upsert} onReadOnly={() => setReadOnly(true)} />;
 
   return (
     <View style={{ flex: 1 }}>
@@ -345,10 +377,6 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
         )}
         {showDone && <Section title="Done" list={sec.done} />}
       </ScrollView>
-      <Modal visible={!!selected} animationType="slide" onRequestClose={() => setSel(null)}>
-        {selected && <ItemSheet base={base} list={list} item={selected} me={me} readOnly={readOnly} items={items}
-          onClose={() => setSel(null)} onChanged={upsert} onReadOnly={() => setReadOnly(true)} />}
-      </Modal>
     </View>
   );
 }
@@ -367,7 +395,17 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
   const [who, setWho] = useState(item.who || "");
   const [tags, setTags] = useState((item.tags || []).join(", "));
   const [picker, setPicker] = useState(false);
-  const [reply, setReply] = useState("");
+  const draftKey = `${base}|${list.name}|${item.id}`;
+  const [reply, setReplyState] = useState("");
+  useEffect(() => { store.drafts().then((d) => { if (d[draftKey]) setReplyState(d[draftKey]); }); }, [draftKey]);
+  const setReply = (t: string) => {
+    setReplyState(t);
+    store.drafts().then((d) => { if (t.trim()) d[draftKey] = t; else delete d[draftKey]; store.setDrafts(d); });
+  };
+  const kbPad = useKeyboardPad();
+  const scroller = useRef<ScrollView>(null);
+  const replyFocused = useRef(false);
+  useEffect(() => { if (replyFocused.current && kbPad > 0) setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 50); }, [kbPad]);
   const [askKind, setAskKind] = useState<string | null>(null);
   const [askText, setAskText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -397,21 +435,26 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
   };
   const setDue = (d: string) => patch({ due: d }, d ? "Date set" : "Date removed");
   const send = async () => { const t = reply.trim(); if (!t) return; if (await run(() => api.comment(base, list.name, item.id, t))) setReply(""); };
+  const close = () => {
+    if (reply.trim()) toast("Your note is kept here until you send it");
+    if (dirty) Alert.alert("Save your changes?", "", [{ text: "Discard", style: "destructive", onPress: onClose }, { text: "Save", onPress: async () => { await save(); onClose(); } }]);
+    else onClose();
+  };
+  useBack(close);
   const askHelp = async () => {
     if (!askKind) return;
     if (await run(() => api.ask(base, list.name, item.id, askKind, askText.trim() || undefined), "Asked")) { setAskKind(null); setAskText(""); }
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
+    <View style={{ flex: 1, backgroundColor: C.bg, paddingBottom: kbPad }}>
       <View style={s.header}>
-        <Pressable hitSlop={10} onPress={() => { if (dirty) Alert.alert("Save your changes?", "", [{ text: "Discard", style: "destructive", onPress: onClose }, { text: "Save", onPress: async () => { await save(); onClose(); } }]); else onClose(); }}>
+        <Pressable hitSlop={10} onPress={close}>
           <Text style={s.headerLink}>‹ {list.title || list.name}</Text>
         </Pressable>
         {!readOnly && dirty ? <Pressable hitSlop={10} onPress={save}><Text style={[s.headerLink, { fontWeight: "700" }]}>Save</Text></Pressable> : <View style={{ width: 40 }} />}
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={scroller} contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
           <TextInput style={s.titleInput} value={title} onChangeText={setTitle} editable={!readOnly} multiline />
           <View style={s.chips}>
             {STATES.map((x) => (
@@ -496,14 +539,15 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
           })}
           {!readOnly && (
             <View style={{ flexDirection: "row", gap: 8 }}>
-              <TextInput style={[s.input, { flex: 1 }]} value={reply} onChangeText={setReply} placeholder={list.session ? "Write to the assistant or the others…" : "Write a note…"} placeholderTextColor={C.faint} multiline />
+              <TextInput style={[s.input, { flex: 1 }]} value={reply} onChangeText={setReply} placeholder={list.session ? "Write to the assistant or the others…" : "Write a note…"} placeholderTextColor={C.faint} multiline
+                onFocus={() => { replyFocused.current = true; setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 300); }}
+                onBlur={() => { replyFocused.current = false; }} />
               <Pressable onPress={send} disabled={!reply.trim() || busy} style={[s.primaryBtn, { paddingHorizontal: 14, alignSelf: "flex-end" }, (!reply.trim() || busy) && { opacity: 0.5 }]}><Text style={s.primaryBtnT}>Send</Text></Pressable>
             </View>
           )}
           <Text style={[s.hint, { marginTop: 8 }]}>Added by {whoLabel(item.added_by, list.session, me) || "someone"}{item.suggested_by ? `, suggested by ${whoLabel(item.suggested_by, list.session, me)}` : ""}.</Text>
         </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
