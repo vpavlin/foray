@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { arrange, needsYou, hasContext, isQuestion, dueBucket, dueLabel, sections, applyChanges, whoLabel, notesFromChanges, dueTodayNotes, baseUrl } from "../src/model.ts";
+import { validAgent, trustProblems, agentBase, arrange, needsYou, hasContext, isQuestion, dueBucket, dueLabel, sections, applyChanges, whoLabel, notesFromChanges, dueTodayNotes, baseUrl } from "../src/model.ts";
 import type { Item, ListInfo, Change } from "../src/model.ts";
 
 const now = new Date(2026, 9, 11, 14, 0);   // Sun 11 Oct 2026, 14:00 local
@@ -110,5 +110,14 @@ assert.equal(notesFromChanges(list, noteEv as Change[], new Set())[0].body, "The
   assert.deepEqual(ids(r.groups[0].items), ["c", "a"], "an item with two tags is under both; changed = newest update first");
   assert.deepEqual(ids(r.groups[1].items), ["a"]);
 }
+
+assert.equal(validAgent("k11/research"), true);
+assert.equal(validAgent(" duet/duet "), true);
+assert.equal(validAgent("research"), false);
+assert.equal(validAgent("a/b/c"), false);
+assert.deepEqual(trustProblems({ "k11/research": "accepting", "x/y": "no longer accepting", "duet/duet": "duet is not on this list's mesh" }),
+  ["duet/duet: duet is not on this list's mesh"]);
+assert.deepEqual(trustProblems(undefined), []);
+assert.equal(agentBase("http://[fdb0::1]:7389"), "http://[fdb0::1]:7387");
 
 console.log("MODEL OK");

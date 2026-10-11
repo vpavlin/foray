@@ -14,7 +14,8 @@ import { api, ApiError } from "./src/api";
 import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
 import { registerBackground } from "./src/background";
-import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl } from "./src/model";
+import { findAgents } from "./src/agents";
+import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, validAgent, trustProblems, Helper, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl } from "./src/model";
 
 const C = {
   bg: "#F4F5F1", card: "#FFFFFF", text: "#1E2320", sub: "#67706A", faint: "#9AA29C", line: "#E2E5DF",
@@ -349,7 +350,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   // keyboard covers without resizing, hiding the reply box.
   if (aboutOpen) return <AboutUs base={base} list={list} ctx={ctx} me={me} readOnly={readOnly}
     onClose={() => setAboutOpen(false)} onSaved={(c) => setCtx(c)} onReadOnly={() => setReadOnly(true)} />;
-  if (selected) return <ItemSheet base={base} list={list} item={selected} me={me} readOnly={readOnly} items={items}
+  if (selected) return <ItemSheet base={base} list={list} item={selected} me={me} readOnly={readOnly} items={items} helpers={ctx?.helpers || []}
     onClose={() => setSel(null)} onChanged={upsert} onReadOnly={() => setReadOnly(true)} />;
 
   return (
@@ -433,7 +434,9 @@ function AboutUs({ base, list, ctx, me, readOnly, onClose, onSaved, onReadOnly }
   const [language, setLanguage] = useState(ctx?.language || "");
   const [currency, setCurrency] = useState(ctx?.currency || "");
   const [notes, setNotes] = useState(ctx?.notes || "");
+  const [helpers, setHelpers] = useState<Helper[]>(ctx?.helpers || []);
   const [cur, setCur] = useState<ListContext | null>(ctx);
+  const [trustErr, setTrustErr] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const kbPad = useKeyboardPad();
@@ -443,12 +446,13 @@ function AboutUs({ base, list, ctx, me, readOnly, onClose, onSaved, onReadOnly }
     api.context(base, list.name).then((c) => {
       if (!c) return;
       setCur(c);
-      if (!typed.current) { setPlace(c.place || ""); setLanguage(c.language || ""); setCurrency(c.currency || ""); setNotes(c.notes || ""); }
+      if (!typed.current) { setPlace(c.place || ""); setLanguage(c.language || ""); setCurrency(c.currency || ""); setNotes(c.notes || ""); setHelpers(c.helpers || []); }
     }).catch(() => {});
   }, [base, list.name]);
   const edit = (f: (t: string) => void) => (t: string) => { typed.current = true; f(t); };
+  const sameHelpers = (a: Helper[], b: Helper[]) => JSON.stringify(a.map((h) => [h.agent, h.for || ""])) === JSON.stringify(b.map((h) => [h.agent, h.for || ""]));
   const dirty = place.trim() !== (cur?.place || "") || language.trim() !== (cur?.language || "")
-    || currency.trim() !== (cur?.currency || "") || notes.trim() !== (cur?.notes || "");
+    || currency.trim() !== (cur?.currency || "") || notes.trim() !== (cur?.notes || "") || !sameHelpers(helpers, cur?.helpers || []);
   const close = () => {
     if (dirty && !readOnly) Alert.alert("Save what you wrote?", "", [{ text: "Discard", style: "destructive", onPress: onClose }, { text: "Save", onPress: () => { save().then((ok) => { if (ok) onClose(); }); } }]);
     else onClose();
@@ -458,8 +462,13 @@ function AboutUs({ base, list, ctx, me, readOnly, onClose, onSaved, onReadOnly }
     if (busy) return false;
     setBusy(true); setError("");
     try {
-      const c = await api.setContext(base, list.name, { place: place.trim(), language: language.trim(), currency: currency.trim(), notes: notes.trim() });
-      const saved = c && typeof c === "object" && "place" in c ? c : { place: place.trim(), language: language.trim(), currency: currency.trim(), notes: notes.trim(), by: me };
+      const body = { place: place.trim(), language: language.trim(), currency: currency.trim(), notes: notes.trim(),
+                     helpers: helpers.map((h) => (h.for ? { agent: h.agent, for: h.for } : { agent: h.agent })) };
+      const c = await api.setContext(base, list.name, body);
+      const saved: ListContext = c && typeof c === "object" ? { ...body, ...c } : { ...body, by: me };
+      if (!saved.helpers) saved.helpers = [];
+      // The service lets each new helper take the assistant's requests; say when that didn't work.
+      setTrustErr(trustProblems(c && c.trust));
       setCur(saved); onSaved(saved); typed.current = false; toast("Saved");
       return true;
     } catch (e) {
@@ -489,7 +498,9 @@ function AboutUs({ base, list, ctx, me, readOnly, onClose, onSaved, onReadOnly }
         <TextInput style={[s.input, { minHeight: 120, textAlignVertical: "top" }]} value={notes} onChangeText={edit(setNotes)} editable={!readOnly} multiline maxLength={4000}
           placeholder={"The car: 2019 Octavia, tyres 205/55 R16\nWe shop at …"} placeholderTextColor={C.faint} />
         {notes.length > 3600 && <Text style={s.hint}>{4000 - notes.length} characters left</Text>}
+        <HelpersEditor base={base} mesh={list.mesh} helpers={helpers} readOnly={readOnly} onChange={(h) => { typed.current = true; setHelpers(h); }} />
         {!!error && <Text style={[s.sub, { color: C.warn }]}>{error}</Text>}
+        {trustErr.map((t) => <Text key={t} style={[s.sub, { color: C.warn }]}>{t}</Text>)}
         {!readOnly && <Pressable onPress={save} disabled={busy || !dirty} style={[s.primaryBtn, (busy || !dirty) && { opacity: 0.5 }]}><Text style={s.primaryBtnT}>{busy ? "Saving…" : "Save"}</Text></Pressable>}
         {readOnly && <Text style={s.hint}>This phone can read this but not change it.</Text>}
         {!!cur?.by && <Text style={s.hint}>Last changed by {whoLabel(cur.by, list.session, me)}{cur.updated ? `, ${new Date(cur.updated).toLocaleString()}` : ""}.</Text>}
@@ -542,6 +553,62 @@ function CopyLink({ text }: { text: string }) {
   );
 }
 
+// ── helpers: agents the list's assistant may ask, kept in About us ───────────
+function HelpersEditor({ base, mesh, helpers, readOnly, onChange }: {
+  base: string; mesh: string; helpers: Helper[]; readOnly: boolean; onChange: (h: Helper[]) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [agent, setAgent] = useState("");
+  const [forText, setForText] = useState("");
+  const [found, setFound] = useState<string[] | null>(null);
+  const open = () => {
+    setAdding(true); setAgent(""); setForText("");
+    if (found === null) findAgents(base, mesh).then(setFound).catch(() => setFound([]));
+  };
+  const add = () => {
+    const a = agent.trim();
+    if (!validAgent(a)) { Alert.alert("Which agent?", "Write it as machine/session, for example k11/research."); return; }
+    if (helpers.some((h) => h.agent === a)) { Alert.alert("Already a helper"); return; }
+    onChange([...helpers, forText.trim() ? { agent: a, for: forText.trim() } : { agent: a }]);
+    setAdding(false);
+  };
+  const choices = (found || []).filter((a) => !helpers.some((h) => h.agent === a) && (!agent.trim() || a.toLowerCase().includes(agent.trim().toLowerCase())));
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={s.label}>Helpers</Text>
+      <Text style={s.sub}>Agents the assistant may ask for help, and what each is good for.</Text>
+      {helpers.map((h) => (
+        <View key={h.agent} style={[s.card, { flexDirection: "row", alignItems: "center", paddingVertical: 10 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.body}>{h.agent}</Text>
+            {!!h.for && <Text style={s.sub}>{h.for}</Text>}
+          </View>
+          {!readOnly && <Pressable hitSlop={8} onPress={() => onChange(helpers.filter((x) => x.agent !== h.agent))}><Text style={{ color: C.warn, fontSize: 13 }}>Remove</Text></Pressable>}
+        </View>
+      ))}
+      {!readOnly && !adding && helpers.length < 20 && (
+        <Pressable hitSlop={6} onPress={open} style={{ alignSelf: "flex-start" }}><Text style={{ color: C.accent, fontSize: 14 }}>+ helper</Text></Pressable>
+      )}
+      {adding && (
+        <View style={[s.card, { gap: 8 }]}>
+          <TextInput style={s.input} value={agent} onChangeText={setAgent} placeholder="machine/session" placeholderTextColor={C.faint} autoCapitalize="none" autoCorrect={false} />
+          {found === null ? <Text style={s.hint}>Looking for agents…</Text> : choices.length > 0 ? (
+            <View style={s.chips}>{choices.slice(0, 12).map((a) => (
+              <Pressable key={a} style={[s.chip, agent === a && { borderColor: C.accent }]} onPress={() => setAgent(a)}><Text style={s.chipT}>{a}</Text></Pressable>
+            ))}</View>
+          ) : found.length === 0 ? <Text style={s.hint}>No agents found from here; type one.</Text> : null}
+          <TextInput style={s.input} value={forText} onChangeText={setForText} placeholder="What it's good for, e.g. research, prices" placeholderTextColor={C.faint} maxLength={200} />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Pressable onPress={() => setAdding(false)} style={[s.chip, { paddingVertical: 9, paddingHorizontal: 16 }]}><Text style={s.chipT}>Cancel</Text></Pressable>
+            <Pressable onPress={add} disabled={!agent.trim()} style={[s.primaryBtn, { flex: 1 }, !agent.trim() && { opacity: 0.5 }]}><Text style={s.primaryBtnT}>Add helper</Text></Pressable>
+          </View>
+          <Text style={s.hint}>Save About us to keep it.</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ── the summary: what's known about an item, in markdown, usually the assistant's ─
 function SummaryBox({ item, list, me, readOnly, save }: {
   item: Item; list: ListInfo; me: string; readOnly: boolean; save: (text: string) => Promise<boolean>;
@@ -591,8 +658,8 @@ const STATES: { s: State; label: string }[] = [
   { s: "open", label: "To do" }, { s: "waiting", label: "Waiting" }, { s: "done", label: "Done" }, { s: "dropped", label: "Not doing" },
 ];
 
-function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, onReadOnly }: {
-  base: string; list: ListInfo; item: Item; me: string; readOnly: boolean; items: Item[];
+function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, onChanged, onReadOnly }: {
+  base: string; list: ListInfo; item: Item; me: string; readOnly: boolean; items: Item[]; helpers: Helper[];
   onClose: () => void; onChanged: (it: Item) => void; onReadOnly: () => void;
 }) {
   const [title, setTitle] = useState(item.title);
@@ -613,6 +680,7 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
   useEffect(() => { if (replyFocused.current && kbPad > 0) setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 50); }, [kbPad]);
   const [askKind, setAskKind] = useState<string | null>(null);
   const [askText, setAskText] = useState("");
+  const [askTo, setAskTo] = useState("");   // "" = the assistant decides who to ask
   const [busy, setBusy] = useState(false);
   useEffect(() => { setTitle(item.title); setNotes(item.notes || ""); setWho(item.who || ""); setTags((item.tags || []).join(", ")); }, [item.id]);   // eslint-disable-line
 
@@ -648,7 +716,7 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
   useBack(close);
   const askHelp = async () => {
     if (!askKind) return;
-    if (await run(() => api.ask(base, list.name, item.id, askKind, askText.trim() || undefined), "Asked")) { setAskKind(null); setAskText(""); }
+    if (await run(() => api.ask(base, list.name, item.id, askKind, askText.trim() || undefined, askTo || undefined), "Asked")) { setAskKind(null); setAskText(""); setAskTo(""); }
   };
 
   return (
@@ -727,6 +795,18 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
               ))}</View>
               {askKind && <>
                 <TextInput style={s.input} value={askText} onChangeText={setAskText} placeholder={HELP_KINDS.find((k) => k.kind === askKind)!.hint} placeholderTextColor={C.faint} />
+                {helpers.length > 0 && (
+                  <View style={[s.chips, { gap: 6 }]}>
+                    <Text style={s.sub}>Via</Text>
+                    {[{ agent: "", for: "" }, ...helpers].map((h) => (
+                      <Pressable key={h.agent || "-"} onPress={() => setAskTo(h.agent)}
+                        style={[s.chip, { paddingVertical: 4 }, askTo === h.agent && { borderColor: C.accent, backgroundColor: C.accentSoft }]}>
+                        <Text style={[s.chipT, { fontSize: 12 }]}>{h.agent || "the assistant decides"}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                {!!askTo && !!helpers.find((h) => h.agent === askTo)?.for && <Text style={s.hint}>{askTo}: {helpers.find((h) => h.agent === askTo)!.for}</Text>}
                 <Pressable onPress={askHelp} disabled={busy} style={[s.primaryBtn, busy && { opacity: 0.5 }]}><Text style={s.primaryBtnT}>Ask</Text></Pressable>
               </>}
             </View>

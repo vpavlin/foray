@@ -18,7 +18,18 @@ export interface ListInfo {
   counts?: Partial<Record<State, number>>;
 }
 /** What the household tells the assistant about itself (GET/PUT /v1/lists/{list}/context). */
-export interface ListContext { place?: string; language?: string; currency?: string; notes?: string; by?: string; updated?: string }
+/** An agent the list's assistant may ask for help: MACHINE/SESSION, and what it's good for. */
+export interface Helper { agent: string; for?: string }
+export interface ListContext {
+  place?: string; language?: string; currency?: string; notes?: string; helpers?: Helper[]; by?: string; updated?: string;
+  trust?: Record<string, string>;   // only on a PUT reply: per helper, "accepting" / "no longer accepting" / an error
+}
+export const validAgent = (a: string) => /^[^\s/]+\/[^\s/]+$/.test(a.trim());
+/** Trust results worth showing: anything but the two OK answers, as "agent: what went wrong". */
+export const trustProblems = (t: Record<string, string> | undefined) =>
+  Object.entries(t || {}).filter(([, v]) => v !== "accepting" && v !== "no longer accepting").map(([a, v]) => `${a}: ${v}`);
+/** Base URL of shrooms-agent on the same machine as a Foray service (port 7387). */
+export const agentBase = (foray: string) => foray.replace(/:\d+$/, ":7387");
 export const hasContext = (c: ListContext | null | undefined) =>
   !!c && !!((c.place || "").trim() || (c.language || "").trim() || (c.currency || "").trim() || (c.notes || "").trim());
 

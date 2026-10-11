@@ -38,7 +38,7 @@ export const api = {
   whoami: (b: string) => req<WhoAmI>(b, "/v1/whoami", {}, 5000),
   lists: (b: string) => req<{ machine: string; lists: ListInfo[] }>(b, "/v1/lists", {}, 5000),
   context: (b: string, l: string) => req<ListContext>(b, `/v1/lists/${enc(l)}/context`),
-  setContext: (b: string, l: string, c: { place: string; language: string; currency: string; notes: string }) =>
+  setContext: (b: string, l: string, c: { place: string; language: string; currency: string; notes: string; helpers: { agent: string; for?: string }[] }) =>
     req<ListContext>(b, `/v1/lists/${enc(l)}/context`, { method: "PUT", body: c }),
   list: (b: string, l: string) => req<{ list: ListInfo; items: Item[]; context?: ListContext; asks?: { from: string; title: string; at: string }[]; suggest_from?: string[] }>(b, `/v1/lists/${enc(l)}`),
   changes: (b: string, l: string, since: number) => req<{ seq: number; events: Change[]; reset?: boolean }>(b, `/v1/lists/${enc(l)}/changes?since=${since}`),
@@ -47,7 +47,11 @@ export const api = {
   patch: (b: string, l: string, id: string, body: Partial<Pick<Item, "title" | "notes" | "state" | "due" | "who" | "tags" | "summary">>) =>
     req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}`, { method: "PATCH", body }),
   comment: (b: string, l: string, id: string, text: string) => req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}/comments`, { method: "POST", body: { text } }),
-  ask: (b: string, l: string, id: string, kind: string, text?: string) => req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}/ask`, { method: "POST", body: { kind, text } }),
+  ask: (b: string, l: string, id: string, kind: string, text?: string, to?: string) =>
+    req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}/ask`, { method: "POST", body: to ? { kind, text, to } : { kind, text } }),
+  // shrooms-agent on a machine (port 7387): its mesh peers, and its sessions.
+  peers: (agentBase: string) => req<{ peers: { name: string; mesh: string; overlay: string }[] }>(agentBase, "/v1/peers", {}, 4000),
+  sessions: (agentBase: string) => req<{ sessions: { name: string }[] }>(agentBase, "/v1/sessions", {}, 4000),
   allow: (b: string, l: string, from: string) => req<unknown>(b, `/v1/lists/${enc(l)}/allow`, { method: "POST", body: { from } }),
   ignore: (b: string, l: string, from: string) => req<unknown>(b, `/v1/lists/${enc(l)}/ignore`, { method: "POST", body: { from } }),
 };
