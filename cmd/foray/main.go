@@ -109,9 +109,12 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Without the shrooms daemon the lists are served on loopback only, and
+	// said so: a daemon still starting, or a development machine. The mesh
+	// addresses are picked up below once it answers.
 	st, err := mesh.Fetch(cfg.Socket)
 	if err != nil {
-		return err
+		log.Warn("no shrooms daemon; serving on loopback only", "err", err)
 	}
 	names := &mesh.Names{}
 	names.Update(st)
@@ -122,7 +125,15 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	srv.Who, srv.Self = names.Who, names.Self
+	srv.Who = names.Who
+	// This machine by its mesh name, or its hostname until the daemon says.
+	srv.Self = func() string {
+		if n := names.Self(); n != "" {
+			return n
+		}
+		h, _ := os.Hostname()
+		return h
+	}
 	srv.Notify = server.AgentNotifier(func(m string) (netip.Addr, bool) {
 		addrMu.Lock()
 		defer addrMu.Unlock()

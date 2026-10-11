@@ -211,6 +211,8 @@ Item {
         // The lists, by mesh.
         ColumnLayout {
             Layout.preferredWidth: 230
+            Layout.maximumWidth: 230
+            Layout.fillWidth: false
             Layout.fillHeight: true
             spacing: 8
             Text { text: "Foray"; color: cBone; font.pixelSize: 24; font.weight: Font.DemiBold }
@@ -382,7 +384,11 @@ Item {
                                         var b = []
                                         if (card.it.due) b.push((root.overdue(card.it) ? "overdue · " : "") + root.dueText(card.it.due))
                                         if (card.it.who) b.push(card.it.who)
-                                        if ((card.it.help || []).length) b.push("helper " + card.it.help[card.it.help.length - 1].state)
+                                        if ((card.it.help || []).length) {
+                                            var h = card.it.help[card.it.help.length - 1]
+                                            b.push(h.state === "completed" ? "answer ready" : h.state === "working" ? "assistant on it"
+                                                   : h.state === "failed" ? "help failed" : "help: " + h.state)
+                                        }
                                         if ((card.it.comments || []).length) b.push(card.it.comments.length + " note" + (card.it.comments.length > 1 ? "s" : ""))
                                         for (var i = 0; i < (card.it.tags || []).length; i++) b.push("#" + card.it.tags[i])
                                         return b
