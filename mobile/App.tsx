@@ -9,7 +9,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as Notifications from "expo-notifications";
 import * as Clipboard from "expo-clipboard";
-import { parseMarkdown, stripMarkdown, Inline, Block } from "./src/md";
+import { parseMarkdown, stripMarkdown, previewLine, Inline, Block } from "./src/md";
 import { api, ApiError } from "./src/api";
 import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
@@ -326,6 +326,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
             return bits.length ? <Text style={[s.sub, !done && (b === "overdue" || b === "today") && { color: C.warn }]} numberOfLines={1}>{bits.join(" · ")}</Text> : null;
           })()}
           {asked && !done && <Text style={[s.sub, { color: C.blue }]} numberOfLines={1}>The assistant asked: {stripMarkdown(lastC!.text)}</Text>}
+          {!!(it.summary || "").trim() && !done && <Text style={s.sub} numberOfLines={1}>{previewLine(it.summary!)}</Text>}
         </View>
       </Pressable>
     );
@@ -513,6 +514,50 @@ function CopyLink({ text }: { text: string }) {
   );
 }
 
+// ── the summary: what's known about an item, in markdown, usually the assistant's ─
+function SummaryBox({ item, list, me, readOnly, save }: {
+  item: Item; list: ListInfo; me: string; readOnly: boolean; save: (text: string) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const summary = (item.summary || "").trim();
+  const start = () => { setText(item.summary || ""); setEditing(true); };
+  const done = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { if (await save(text.trim())) setEditing(false); } finally { setBusy(false); }
+  };
+  if (editing) return (
+    <View style={[s.card, { gap: 8 }]}>
+      <Text style={s.label}>Summary</Text>
+      <TextInput style={[s.input, { minHeight: 160, textAlignVertical: "top", fontFamily: "monospace", fontSize: 13 }]} value={text} onChangeText={setText}
+        multiline maxLength={8000} autoFocus placeholder={"What's known about this: the gist, the facts, links to act on"} placeholderTextColor={C.faint} />
+      {text.length > 7500 && <Text style={s.hint}>{8000 - text.length} characters left</Text>}
+      <Text style={s.hint}>Markdown works: **bold**, - lists, [links](https://…).</Text>
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <Pressable onPress={() => setEditing(false)} style={[s.chip, { paddingVertical: 9, paddingHorizontal: 16 }]}><Text style={s.chipT}>Cancel</Text></Pressable>
+        <Pressable onPress={done} disabled={busy || text.trim() === summary} style={[s.primaryBtn, { flex: 1 }, (busy || text.trim() === summary) && { opacity: 0.5 }]}>
+          <Text style={s.primaryBtnT}>{busy ? "Saving…" : "Save"}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+  if (!summary) return readOnly ? null : (
+    <Pressable hitSlop={6} onPress={start} style={{ alignSelf: "flex-start" }}><Text style={{ color: C.accent, fontSize: 14 }}>+ Summary</Text></Pressable>
+  );
+  return (
+    <View style={[s.card, { backgroundColor: "#F3F7F4" }]}>
+      <Text style={[s.label, { marginTop: 0, marginBottom: 6 }]}>Summary{item.summary_by ? ` · ${whoLabel(item.summary_by, list.session, me)}` : ""}</Text>
+      <Markdown text={summary} />
+      <View style={{ flexDirection: "row", gap: 18 }}>
+        <CopyLink text={summary} />
+        {!readOnly && <Pressable hitSlop={6} onPress={start} style={{ marginTop: 4 }}><Text style={{ fontSize: 12, color: C.accent }}>Edit</Text></Pressable>}
+      </View>
+    </View>
+  );
+}
+
 // ── one item ─────────────────────────────────────────────────────────────────
 const STATES: { s: State; label: string }[] = [
   { s: "open", label: "To do" }, { s: "waiting", label: "Waiting" }, { s: "done", label: "Done" }, { s: "dropped", label: "Not doing" },
@@ -588,6 +633,8 @@ function ItemSheet({ base, list, item, me, readOnly, items, onClose, onChanged, 
       </View>
         <ScrollView ref={scroller} contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
           <TextInput style={s.titleInput} value={title} onChangeText={setTitle} editable={!readOnly} multiline />
+          <SummaryBox item={item} list={list} me={me} readOnly={readOnly}
+            save={(text) => run(() => api.patch(base, list.name, item.id, { summary: text }), text ? "Summary saved" : "Summary removed")} />
           <View style={s.chips}>
             {STATES.map((x) => (
               <Pressable key={x.s} onPress={() => !readOnly && item.state !== x.s && patch({ state: x.s })}

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseMarkdown, parseInline, stripMarkdown, safeUrl } from "../src/md.ts";
+import { parseMarkdown, parseInline, stripMarkdown, safeUrl, previewLine } from "../src/md.ts";
 
 const j = (x: unknown) => JSON.stringify(x);
 // inline
@@ -53,4 +53,8 @@ assert.deepEqual(parseMarkdown("one\ntwo").map((x) => x.t), ["p"], "lines join i
 // plain preview
 assert.equal(stripMarkdown("**Which** car? See [the list](https://x.y) or ![img](https://e/p.png)"), "Which car? See the list or img");
 assert.equal(stripMarkdown("- a\n- b"), "a; b");
+assert.equal(previewLine("## Gist\n\nTwo garages are **open** Saturday.\n\n- [A](https://a.b)"), "Two garages are open Saturday.");
+assert.equal(previewLine("# Only a heading"), "Only a heading");
+assert.equal(previewLine(""), "");
+assert.equal(previewLine("x".repeat(200)).length, 140);
 console.log("MD OK");

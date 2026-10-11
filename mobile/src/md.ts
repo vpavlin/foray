@@ -127,3 +127,13 @@ export function stripMarkdown(src: string): string {
       : plainInline(b.c),
   ).join(" ").replace(/\s+/g, " ").trim();
 }
+
+/** One plain line for a list row: the first paragraph or list (a leading heading is skipped). */
+export function previewLine(src: string, max = 140): string {
+  const blocks = parseMarkdown(src);
+  const b = blocks.find((x) => x.t === "p" || x.t === "ul" || x.t === "ol" || x.t === "quote") || blocks[0];
+  if (!b) return "";
+  const text = b.t === "code" ? b.s : b.t === "ul" || b.t === "ol" ? b.items.map(plainInline).join("; ") : plainInline(b.c);
+  const one = text.replace(/\s+/g, " ").trim();
+  return one.length > max ? one.slice(0, max - 1).trimEnd() + "…" : one;
+}

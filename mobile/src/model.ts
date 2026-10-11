@@ -11,6 +11,7 @@ export interface Item {
   due?: string; who?: string; tags?: string[];
   added_by?: string; suggested_by?: string; created?: string; updated?: string;
   comments?: Comment[]; help?: Help[]; calendar?: string;
+  summary?: string; summary_by?: string;   // what's known about it, in markdown; usually the assistant's
 }
 export interface ListInfo {
   name: string; title: string; mesh: string; session?: string; seq: number;

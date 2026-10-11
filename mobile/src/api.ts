@@ -44,7 +44,7 @@ export const api = {
   changes: (b: string, l: string, since: number) => req<{ seq: number; events: Change[]; reset?: boolean }>(b, `/v1/lists/${enc(l)}/changes?since=${since}`),
   add: (b: string, l: string, body: { title: string; notes?: string; due?: string; who?: string; tags?: string[]; state?: string }) =>
     req<Item>(b, `/v1/lists/${enc(l)}/items`, { method: "POST", body }),
-  patch: (b: string, l: string, id: string, body: Partial<Pick<Item, "title" | "notes" | "state" | "due" | "who" | "tags">>) =>
+  patch: (b: string, l: string, id: string, body: Partial<Pick<Item, "title" | "notes" | "state" | "due" | "who" | "tags" | "summary">>) =>
     req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}`, { method: "PATCH", body }),
   comment: (b: string, l: string, id: string, text: string) => req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}/comments`, { method: "POST", body: { text } }),
   ask: (b: string, l: string, id: string, kind: string, text?: string) => req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}/ask`, { method: "POST", body: { kind, text } }),
