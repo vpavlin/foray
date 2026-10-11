@@ -1,6 +1,6 @@
-# Shrooms Todo — design
+# Foray — design
 
-**Status:** draft for review, 2026-10-11. Nothing built. Working name.
+**Status:** draft for review, 2026-10-11. Nothing built.
 
 A todo list for a household — "buy XYZ", "schedule the tire change" — that two
 people share from their phones and desktops, with an agent session that knows
@@ -15,7 +15,7 @@ A2A tasks for asking agents, and Scala for the calendar.
 ## 1. Pieces
 
 ```
-   phone (Todo app) ─┐                    ┌─ home-todo  (an agent session on the same machine)
+   phone (Foray app) ─┐                    ┌─ home-todo  (an agent session on the same machine)
    wife's phone ─────┼── mesh ── todo ────┤     triage, help, conversation
    Basecamp (Todo) ──┘          service   └─ other sessions (research, drafts) via A2A
                                   │
@@ -24,10 +24,10 @@ A2A tasks for asking agents, and Scala for the calendar.
 
 | Piece | What it is |
 |---|---|
-| **todo service** | A small Go daemon on one machine: holds the lists, serves them on the machine's mesh addresses. The data. |
+| **foray service** | A small Go daemon on one machine: holds the lists, serves them on the machine's mesh addresses. The data. |
 | **Todo session** | One shrooms-agent session per list (`home-todo`), with the list's tools. The assistant. |
-| **todo MCP** | `todo mcp --list home`: the tools the session works the list with, wired into the session by its own `.mcp.json`. |
-| **Todo apps** | A Basecamp module (view + core) and an Android app. Find every list on every mesh the device is on. |
+| **foray MCP** | `foray mcp --list home`: the tools the session works the list with, wired into the session by its own `.mcp.json`. |
+| **Foray apps** | A Basecamp module (view + core) and an Android app. Find every list on every mesh the device is on. |
 | **Scala bridge** | Phase 2: timed items as events in a calendar the household shares; free/busy read back. |
 
 ## 2. Lists, one per mesh
@@ -71,7 +71,7 @@ A normal shrooms-agent session, created once per list:
   and nothing else of that machine. This matters: **anyone who can see a
   session can drive it**, and the home mesh has people on it who are not you.
 - **In a cage**, not sealed: it needs the list and the mesh, not anybody's
-  home directory. Its tools reach the todo service over loopback through the
+  home directory. Its tools reach the foray service over loopback through the
   cage's proxy.
 - **pi on a local model** is a good default for the triage: it is called on
   every item, and the paid model is better spent on the help it asks for.
@@ -79,7 +79,7 @@ A normal shrooms-agent session, created once per list:
   directory): what the list is for, who uses it, how to triage, when to ask
   for help, when to ask the people instead.
 
-**Its tools** (`todo mcp`): `list_items`, `get_item`, `add_item`,
+**Its tools** (`foray mcp`): `list_items`, `get_item`, `add_item`,
 `update_item`, `set_state`, `attach` (a file or an answer to an item),
 `request_help` (records a help request on the item and sends the A2A task).
 Plus the shrooms tools every session has: `list_agents`, `ask_agent`,
@@ -187,7 +187,7 @@ Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 
 1. **The list.** Service, per-mesh lists, Basecamp and Android apps, direct
    add. Useful with no agent at all.
-2. **The session.** `todo mcp`, the session's set-up, triage notes, help as
+2. **The session.** `foray mcp`, the session's set-up, triage notes, help as
    tasks, agents adding through the session.
 3. **The calendar.** The Scala bridge, free/busy, the scheduler.
 4. **Offline both ways**, if it is wanted: the list as a multi-writer log
@@ -197,19 +197,19 @@ Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 
 | | |
 |---|---|
-| **Name** | Shrooms Todo; a mushroom word is welcome (below) |
+| **Name** | **Foray** (Shrooms Foray): a mushroom foray is the trip out to gather — errands, shopping, bringing things home |
 | **Host** | jimmy-crib |
 | **Storage** | an append-only event log per list (JSON lines), folded into state and snapshotted. One machine today, and the same log is what a later multi-writer sync (phase 4) replicates, so nothing is rewritten for it |
 | **Triage** | pi on a cheap Venice model — `deepseek-v4-1-flash` or `z-ai-glm-5-3-flash`, what pi5, proteus and scribe already use |
-| **People** | vpavlin, and his wife: shrooms and the Todo app on her devices, on the home mesh |
+| **People** | vpavlin, and his wife: shrooms and the Foray app on her devices, on the home mesh |
 | **Agents that may add** | a configurable allow list of `MACHINE/SESSION`; at first only `laptop/shrooms` |
 
 ### Agents adding, and who checks
 
 "An agent asks the Todo session, and the session decides" stays the flow, but
 the **gate is not the session's judgement** — a model can be talked into
-anything. Suggestions go to the todo service first, as an A2A agent of its
-own (`jimmy-crib/todo`): it identifies the caller the way shrooms-agent does
+anything. Suggestions go to the foray service first, as an A2A agent of its
+own (`jimmy-crib/foray`): it identifies the caller the way shrooms-agent does
 (the machine from the mesh, the session from what its agent says), checks the
 allow list, puts the suggestion in the inbox marked with who sent it, and
 hands it to `home-todo` to triage. A caller not on the list is refused, and
@@ -242,15 +242,13 @@ Two things to do first, neither of them code:
 | **Basket** | what a forager carries: the household's list |
 | **Fruiting** | the mycelium's work becoming visible — the thing actually done |
 
-Recommendation: **Foray**. It says "going out to get things done" in the
-mushroom world's own word, it is short, and "Shrooms Foray" reads as one of
-the family.
+Chosen: **Foray**.
 
 ## 12. Open questions
 
 1. **Venice key** for pi on jimmy-crib: the one pi5, proteus and scribe use,
    or a key of its own (its own budget, its own "runs out" warning)?
-2. **Notifications on the wife's phone:** the Todo app's own, or Scala
+2. **Notifications on the wife's phone:** the Foray app's own, or Scala
    reminders only?
 3. **`putEvent` public:** the bridge is simpler and safer with it; ask Scala
    to ship 0.12.4 publicly before phase 3.

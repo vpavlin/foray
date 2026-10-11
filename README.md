@@ -1,4 +1,4 @@
-# Shrooms Todo (working name)
+# Foray
 
 A household todo list on your own machines: shared by the people on a shrooms
 mesh, with an agent session that knows the list, triages it, and asks other
