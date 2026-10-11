@@ -110,6 +110,9 @@ export const HELP_KINDS: { kind: string; label: string; hint: string }[] = [
   { kind: "plan", label: "Plan", hint: "e.g. break it into steps" },
 ];
 
+/** A comment that asks something: its plain text ends with a question mark (also the full-width one). */
+export const isQuestion = (text: string) => /[?？]["'”’)\]]*$/.test(stripMarkdown(text || "").trim());
+
 // ── notifications ────────────────────────────────────────────────────────────
 export interface Note { key: string; title: string; body: string; list: string; item: string }
 
@@ -127,7 +130,8 @@ export function notesFromChanges(list: ListInfo, events: Change[], seen: Set<str
     if (e.op === "comment" && list.session) {
       const last = (it.comments || [])[(it.comments || []).length - 1];
       if (last && (last.by === list.session || last.by.endsWith("/" + list.session)))
-        add({ key: `q:${list.name}:${it.id}:${last.at}`, title: `${it.title}`, body: `The assistant asks: ${stripMarkdown(last.text)}`, list: list.name, item: it.id });
+        add({ key: `q:${list.name}:${it.id}:${last.at}`, title: `${it.title}`,
+              body: `${isQuestion(last.text) ? "The assistant asks" : "The assistant"}: ${stripMarkdown(last.text)}`, list: list.name, item: it.id });
     }
     for (const h of it.help || []) {
       if (h.state === "completed")

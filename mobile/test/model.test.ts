@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { hasContext, dueBucket, dueLabel, sections, applyChanges, whoLabel, notesFromChanges, dueTodayNotes, baseUrl } from "../src/model.ts";
+import { hasContext, isQuestion, dueBucket, dueLabel, sections, applyChanges, whoLabel, notesFromChanges, dueTodayNotes, baseUrl } from "../src/model.ts";
 import type { Item, ListInfo, Change } from "../src/model.ts";
 
 const now = new Date(2026, 9, 11, 14, 0);   // Sun 11 Oct 2026, 14:00 local
@@ -68,5 +68,13 @@ assert.equal(baseUrl("http://10.0.0.2:8000/", 7389), "http://10.0.0.2:8000");
 assert.equal(hasContext(null), false);
 assert.equal(hasContext({ place: "  ", notes: "" , by: "x", updated: "t" }), false, "by/updated alone isn't content");
 assert.equal(hasContext({ currency: "CZK" }), true);
+
+assert.equal(isQuestion("Which car?"), true);
+assert.equal(isQuestion("**Kdy** to potřebuješ?\n"), true);
+assert.equal(isQuestion("Is it the \"blue one?\""), true);
+assert.equal(isQuestion("Shrnutí doplněno: dvě garáže mají v sobotu otevřeno."), false);
+assert.equal(isQuestion("Why? Because it's cheaper."), false, "a question mark in the middle doesn't make it a question");
+const noteEv = [{ seq: 1, at: "", by: "foray-home", op: "comment", item: it("u", "open", { title: "tires", comments: [{ by: "foray-home", at: "9", text: "Shrnutí doplněno." }] }) }];
+assert.equal(notesFromChanges(list, noteEv as Change[], new Set())[0].body, "The assistant: Shrnutí doplněno.");
 
 console.log("MODEL OK");
