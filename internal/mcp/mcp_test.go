@@ -106,6 +106,15 @@ func TestTheSessionWorksTheList(t *testing.T) {
 		t.Fatalf("help not recorded: %s", full)
 	}
 
+	// Looked up by the session itself: one entry, from working to completed.
+	call("record_help", map[string]any{"id": id, "kind": "find out", "state": "working", "ask": "opening hours"})
+	call("record_help", map[string]any{"id": id, "kind": "find out", "state": "completed", "answer": "Mon–Fri 8–16"})
+	full, _ = call("get_item", map[string]any{"id": id})
+	if !strings.Contains(full, `"task": "self:`+id+`:find-out"`) || !strings.Contains(full, `"worker": "self"`) ||
+		strings.Count(full, `"task": "self:`) != 1 || !strings.Contains(full, "Mon–Fri 8–16") {
+		t.Fatalf("help looked up by the session itself: %s", full)
+	}
+
 	if out, _ = call("get_context", map[string]any{}); !strings.Contains(out, "Do not guess") {
 		t.Fatalf("an empty context: %s", out)
 	}

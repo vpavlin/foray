@@ -196,6 +196,14 @@ func (c Client) Call(tool string, a Args) (string, error) {
 	case "comment":
 		return c.item("POST", "/items/"+url.PathEscape(a.ID)+"/comments", map[string]string{"text": a.Text})
 	case "record_help":
+		// Looked up by the session itself: no agent's task, so one of its own,
+		// per item and kind, so working and then completed are one entry.
+		if a.Task == "" {
+			if a.Worker == "" {
+				a.Worker = "self"
+			}
+			a.Task = "self:" + a.ID + ":" + strings.ReplaceAll(a.Kind, " ", "-")
+		}
 		return c.item("POST", "/items/"+url.PathEscape(a.ID)+"/help", map[string]string{
 			"task": a.Task, "worker": a.Worker, "kind": a.Kind, "state": a.stateOr(), "ask": a.Ask, "answer": a.Answer})
 	case "decide_suggestion":
@@ -310,9 +318,9 @@ var Tools = []map[string]any{
 	tool("comment", "Say something on an item — a question for the people, or what you found. They see it in the app and their answers come back to you.",
 		props{"id": str(""), "text": str("")}, "id", "text"),
 	tool("record_help", "Record help asked of another agent for an item, and its progress: call it when you send the task (state working) and again with the answer.",
-		props{"id": str("the item"), "task": str("the task id ask_agent returned"), "worker": str("MACHINE/SESSION"),
+		props{"id": str("the item"), "task": str("the task id ask_agent returned; empty when you looked it up yourself"), "worker": str("MACHINE/SESSION, or self"),
 			"kind": str("find out, compare, draft, plan"), "state": str("working, completed, failed"), "ask": str("what you asked"), "answer": str("what came back, short")},
-		"id", "task"),
+		"id"),
 	tool("decide_suggestion", "Decide on an agent's suggestion: accept (into the inbox for a person), merge (into the item it repeats, given as into), or drop (with text saying why).",
 		props{"id": str("the suggestion"), "decision": str("accept, merge or drop"), "into": str("for merge"), "text": str("for drop: why")}, "id", "decision"),
 }

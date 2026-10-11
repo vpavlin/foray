@@ -71,9 +71,38 @@ import json, sys
 path, provider, model = sys.argv[1:]
 json.dump({"defaultProvider": provider, "defaultModel": model}, open(path, "w"), indent=2)
 PY
+# pi reads a folder's .pi/settings.json (the model above) only from folders
+# it trusts; in rpc mode it never asks, so the folder is trusted here. A
+# trusted folder can also bring pi extensions in .pi/ — the session runs in a
+# cage, so whatever it put there would run in the cage too.
+python3 - "$HOME/.pi/agent/trust.json" "$dir" <<'PY2'
+import json, os, sys
+path, d = sys.argv[1:]
+t = json.load(open(path)) if os.path.exists(path) else {}
+t[os.path.realpath(d)] = True
+os.makedirs(os.path.dirname(path), exist_ok=True)
+json.dump(t, open(path, "w"), indent=2)
+PY2
 if ! python3 -c "import json,os,sys; m=json.load(open(os.path.expanduser('~/.pi/agent/models.json'))); sys.exit(0 if '$provider' in (m.get('providers') or m) else 1)" 2>/dev/null; then
     echo "   NOTE: pi has no '$provider' provider in ~/.pi/agent/models.json — add it (with its key) before the session can think"
 fi
+
+echo "==> the session's browser"
+# Its own, so it can look things up instead of waiting on other agents. In
+# the session's project config (.pi/mcp.json), so no other pi session on this
+# machine starts one; installed in the cage once the session runs (below).
+mkdir -p "$dir/browser"
+cp browser/foray_browser.py "$dir/browser/"
+cp browser/foray-browser "$dir/bin/foray-browser"
+python3 - "$dir/.pi/mcp.json" "$dir/bin/foray-browser" <<'PY2'
+import json, os, sys
+path, binp = sys.argv[1:]
+c = json.load(open(path)) if os.path.exists(path) else {}
+c.setdefault("mcpServers", {})["foray-browser"] = {
+    "command": binp, "exposure": "direct",
+    "description": "A browser for the list's session: web_search, read_page."}
+json.dump(c, open(path, "w"), indent=2)
+PY2
 
 echo "==> the session's tools (pi)"
 python3 - "$HOME/.pi/agent/mcp.json" "$dir/bin/foray" "$list" "$dir/.foray.sock" <<'PY'
@@ -82,6 +111,9 @@ path, binp, lst, sock = sys.argv[1:]
 c = json.load(open(path)) if os.path.exists(path) else {"mcpServers": {}}
 c.setdefault("mcpServers", {})["foray-" + lst] = {
     "command": binp, "args": ["mcp", "--list", lst, "--socket", sock],
+    # Direct: its tools are ordinary tools, which a small model uses best
+    # (pi 1.x would otherwise reach them through codemode or a search).
+    "exposure": "direct",
     "description": "The household's Foray list: only its own session may use these tools."}
 os.makedirs(os.path.dirname(path), exist_ok=True)
 json.dump(c, open(path, "w"), indent=2)
@@ -132,10 +164,25 @@ if [ "$session" = 1 ]; then
             echo "   exists"
         else
             caged=""
-            if [ "$cage" = 1 ] && command -v podman >/dev/null; then caged=',"cage":{}'; fi
+            # The desktop image: the workbench and what a browser needs.
+            if [ "$cage" = 1 ] && command -v podman >/dev/null; then caged=',"cage":{"image":"localhost/shrooms-workbench:desktop"}'; fi
             curl -sf -X POST "$agent/v1/sessions" -H 'Content-Type: application/json' \
                 -d "{\"name\":\"$name\",\"dir\":\"$dir\",\"harness\":\"pi\",\"keep_running\":true$caged}" >/dev/null &&
                 echo "   created${caged:+, in a cage}" || { echo "   could not create it: see the machine's shrooms-agent" >&2; exit 1; }
+        fi
+        if [ "$cage" = 1 ] && command -v podman >/dev/null; then
+            echo "   its browser (the first time: a few minutes)"
+            box=""
+            for _ in $(seq 60); do
+                box=$(podman ps --filter "label=xyz.vpavlin.shrooms.session=$name" --format '{{.Names}}' | head -1)
+                [ -n "$box" ] && break
+                sleep 5
+            done
+            if [ -n "$box" ] && podman exec "$box" "$dir/bin/foray-browser" --install; then
+                echo "   ready"
+            else
+                echo "   NOTE: its cage is not up yet (the image may still be building): run this again to install the browser" >&2
+            fi
         fi
         curl -sf -X PATCH "$agent/v1/sessions/$name" -H 'Content-Type: application/json' \
             -d "{\"meshes\":[\"$mesh\"]}" >/dev/null && echo "   limited to $mesh" || echo "   NOTE: could not limit it to $mesh — do it in Shrooms Agents (meshes)"
