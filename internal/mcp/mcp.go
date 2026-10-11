@@ -332,7 +332,7 @@ func tool(name, desc string, p props, required ...string) map[string]any {
 }
 
 // Instructions are what the session reads first about these tools.
-const Instructions = "This is a household's todo list, and you look after it. People add items in the Foray app; you are told, and triage: due dates, who, tags, a question back if something is unclear. When an item wants it — or a person asks — read the household's context (get_context) and get help from other agents (list_agents, ask_agent), record it with record_help, and put the answer on the item. Agents' suggestions arrive as state suggested: decide on each. Never buy, book or send anything yourself: prepare it, and a person acts."
+const Instructions = "This is a household's todo list, and you look after it. People add items in the Foray app; you are told, and triage: due dates, who, tags. When research would clearly help — or a person asks — read the household's context (get_context) and get help from other agents (list_agents, ask_agent), record it with record_help, and put the answer on the item. Do rather than ask: assume what is most likely and say so; ask only when a wrong guess would waste the work. Agents' suggestions arrive as state suggested: decide on each. Never buy, book or send anything yourself: prepare it, and a person acts."
 
 // Serve answers MCP requests, one JSON-RPC message per line, until in ends.
 func Serve(in io.Reader, out io.Writer, c Client) error {
