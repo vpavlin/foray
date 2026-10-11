@@ -145,6 +145,72 @@ Item {
         return d
     }
 
+    // Markdown as the assistant writes it — **bold**, lists, links, code —
+    // made into the rich text a Text shows. By hand rather than Qt's
+    // MarkdownText, which colours links from the application palette
+    // (unreadable here) and would fetch images from wherever they point:
+    // comments and answers come from models and other agents. Images become
+    // their alt text, raw HTML shows as text, and only http(s) links are links.
+    function mdToHtml(src, linkColor) {
+        function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") }
+        function inline(t) {
+            var codes = []
+            t = t.replace(/`([^`]+)`/g, function (m, c) { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000" })
+            t = esc(t)
+            t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+            t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, function (m, label, href) {
+                return '<a href="' + href + '"><span style="color:' + linkColor + '">' + label + '</span></a>' })
+            t = t.replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,;:!?])/g, function (m, pre, href) {
+                return pre + '<a href="' + href + '"><span style="color:' + linkColor + '">' + href + '</span></a>' })
+            t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/__([^_]+)__/g, "<b>$1</b>")
+            t = t.replace(/(^|[^\w*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>").replace(/(^|\W)_([^_\s][^_]*)_(?=\W|$)/g, "$1<i>$2</i>")
+            t = t.replace(/~~([^~]+)~~/g, "<s>$1</s>")
+            return t.replace(/\u0000(\d+)\u0000/g, function (m, i) { return "<code>" + esc(codes[+i]) + "</code>" })
+        }
+        var lines = (src || "").replace(/\r/g, "").split("\n"), out = [], para = [], list = null, code = null
+        function flushPara() { if (para.length) { out.push("<p>" + para.map(inline).join("<br>") + "</p>"); para = [] } }
+        function closeList() { if (list) { out.push("</" + list + ">"); list = null } }
+        for (var i = 0; i < lines.length; i++) {
+            var l = lines[i], m
+            if (code !== null) {
+                if (/^\s*```/.test(l)) { out.push("<pre>" + esc(code.join("\n")) + "</pre>"); code = null } else code.push(l)
+                continue
+            }
+            if (/^\s*```/.test(l)) { flushPara(); closeList(); code = []; continue }
+            if (/^\s*$/.test(l)) { flushPara(); closeList(); continue }
+            if ((m = l.match(/^(#{1,6})\s+(.*)$/))) { flushPara(); closeList(); out.push("<p><b>" + inline(m[2]) + "</b></p>"); continue }
+            if ((m = l.match(/^\s*[-*+]\s+(.*)$/)) || (m = l.match(/^\s*\d+[.)]\s+(.*)$/))) {
+                var kind = /^\s*\d/.test(l) ? "ol" : "ul"
+                flushPara()
+                if (list !== kind) { closeList(); out.push("<" + kind + ">"); list = kind }
+                out.push("<li>" + inline(m[1]) + "</li>")
+                continue
+            }
+            if (list && /^\s{2,}\S/.test(l) && out.length && /<\/li>$/.test(out[out.length - 1])) {
+                out[out.length - 1] = out[out.length - 1].replace(/<\/li>$/, "<br>" + inline(l.trim()) + "</li>"); continue
+            }
+            closeList(); para.push(l)
+        }
+        if (code !== null) out.push("<pre>" + esc(code.join("\n")) + "</pre>")
+        flushPara(); closeList()
+        return out.join("")
+    }
+    function openLink(link) {
+        if (/^https?:\/\//.test(link)) Qt.openUrlExternally(link)
+    }
+
+    // Read-only, selectable and copyable — a draft is for pasting.
+    component MdText: TextArea {
+        property string source: ""
+        text: root.mdToHtml(source, root.cSky)
+        textFormat: TextEdit.RichText
+        readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
+        color: cBone; font.pixelSize: 13
+        padding: 0; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+        background: null
+        onLinkActivated: (link) => root.openLink(link)
+    }
+
     function itemById(id) {
         for (var i = 0; i < items.length; i++) if (items[i].id === id) return items[i]
         return null
@@ -546,8 +612,7 @@ Item {
                                 spacing: 3
                                 Text { text: (modelData.kind || "help") + " · " + modelData.state; color: cAsh; font.pixelSize: 11 }
                                 Text { visible: !!modelData.ask; text: modelData.ask || ""; color: cAsh; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                                TextEdit { visible: !!modelData.answer; text: modelData.answer || ""; readOnly: true; selectByMouse: true
-                                           color: cBone; font.pixelSize: 13; wrapMode: TextEdit.Wrap; Layout.fillWidth: true }
+                                MdText { visible: !!modelData.answer; source: modelData.answer; Layout.fillWidth: true }
                             }
                         }
                     }
@@ -560,7 +625,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 1
                             Text { text: root.byText(modelData.by); color: modelData.by === (root.current ? root.current.session : "") ? cViolet : cAsh; font.pixelSize: 11 }
-                            Text { text: modelData.text; color: cBone; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                            MdText { source: modelData.text; Layout.fillWidth: true }
                         }
                     }
                     Rectangle {

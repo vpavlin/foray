@@ -22,7 +22,7 @@ add '{"title":"Book the tire change","due":"'"$(date -d '+9 days' +%F)"'"}'
 add '{"title":"Call the plumber about the bathroom tap","state":"waiting","who":"Jana"}'
 add '{"title":"Renew the car insurance","due":"'"$(date -d '-1 days' +%F)"'"}'
 id=$(curl -s "http://127.0.0.1:$port/v1/lists/home" | python3 -c "import json,sys;print([i['id'] for i in json.load(sys.stdin)['items'] if i['title']=='Buy winter tires'][0])")
-curl -s -X POST "http://127.0.0.1:$port/v1/lists/home/items/$id/comments" -H 'X-Foray-As: foray-home' -d '{"text":"Summer or all-season? And should I look for a garage that stores them over winter?"}' >/dev/null
+curl -s -X POST "http://127.0.0.1:$port/v1/lists/home/items/$id/comments" -H 'X-Foray-As: foray-home' -d '{"text":"**Two questions:**\n\n- Summer or *all-season*?\n- Should I look for a garage that stores them over winter? See [tyre storage](https://example.com).\n\n![tracker](http://127.0.0.1:9/pixel.png) <b>raw</b>"}' >/dev/null
 curl -s -X POST "http://127.0.0.1:$port/v1/lists/home/items/$id/help" -H 'X-Foray-As: foray-home' -d '{"task":"k11/research:1","worker":"k11/research","kind":"compare","state":"completed","ask":"205/55 R16 winter tyres under 120 EUR each","answer":"Three fit the budget: Nokian WR Snowproof (114), Michelin Alpin 6 (119), Continental WinterContact TS 870 (117). Nokian is quietest in tests."}' >/dev/null
 mkdir -p basecamp/test/out
 cp basecamp/view/Main.qml basecamp/test/LiveHarness.qml "$work/"
