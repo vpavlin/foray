@@ -1,7 +1,7 @@
 // Foray: the household's shared lists. Plain words in the main flow: lists, things to do, who, when.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, AppState, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet,
+  Alert, AppState, Linking, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet,
   Text, TextInput, ToastAndroid, View,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -58,8 +58,24 @@ function Main() {
     } finally { setLoading(false); }
   }, []);
 
+  // foray://add?address=<overlay>[&port=N]: setting up by scanning a QR instead of typing.
+  const onLink = useCallback(async (url: string | null) => {
+    if (!url || !url.startsWith("foray://add")) return;
+    const q = url.slice(url.indexOf("?") + 1).split("&").map((kv) => kv.split("=").map(decodeURIComponent));
+    const get = (k: string) => (q.find(([a]) => a === k) || [])[1] || "";
+    const address = get("address").trim();
+    if (!address) return;
+    const port = Number(get("port")) || 7389;
+    const ms = await store.machines();
+    if (!ms.some((m) => m.address === address && m.port === port)) await store.setMachines([...ms, { address, port }]);
+    toast("Added. Looking for lists…");
+    refresh();
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     refresh();
+    Linking.getInitialURL().then(onLink).catch(() => {});
+    const linkSub = Linking.addEventListener("url", (e) => { onLink(e.url); });
     Notifications.requestPermissionsAsync().catch(() => {});
     registerBackground();
     // A tap on a notification opens its list and item.
@@ -71,8 +87,8 @@ function Main() {
         if (f) { setOpen({ base: f.base, list: f.list }); setOpenItem(d.item || null); }
       });
     });
-    return () => sub.remove();
-  }, [refresh]);
+    return () => { sub.remove(); linkSub.remove(); };
+  }, [refresh, onLink]);
 
   // While the app is open: check every 30 s (notifications for lists not on screen).
   useEffect(() => {
@@ -204,7 +220,16 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
       seq.current = r.list.seq; setError(""); setLoaded(true);
     } catch (e) { setError(msg(e)); setLoaded(true); }
   }, [base, info.name]);
-  useEffect(() => { load(); store.me().then((m) => setMe(m[base] || "")); }, [load, base]);
+  useEffect(() => {
+    load();
+    store.me().then((m) => setMe(m[base] || ""));
+    // Who the computer says this phone is, and whether it may change the list.
+    api.whoami(base).then(async (w) => {
+      if (!w) return;
+      if (w.name) { setMe(w.name); const m = await store.me(); m[base] = w.name; await store.setMe(m); }
+      setReadOnly(w.can_write === false);
+    }).catch(() => {});
+  }, [load, base]);
 
   // Stay current while on screen: the change feed every 5 s.
   useEffect(() => {
@@ -234,10 +259,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
     if (!t) return;
     setDraft("");
     const ok = await guard(async () => {
-      const it = await api.add(base, info.name, { title: t });
-      // The service names whoever added it: that's this phone. Remember it, to say "you".
-      if (it.added_by && it.added_by !== me) { setMe(it.added_by); const m = await store.me(); m[base] = it.added_by; await store.setMe(m); }
-      return it;
+      return api.add(base, info.name, { title: t, state: "open" });
     });
     if (!ok) setDraft(t);
   };

@@ -33,6 +33,9 @@ export async function findLists(): Promise<{ found: Found[]; unreachable: string
 export async function checkAll(opts: { notify: boolean; quietList?: string } = { notify: true }): Promise<Found[]> {
   const { found } = await findLists();
   const seqs = await store.seqs(), seen = await store.seen(), me = await store.me();
+  // What each computer calls this phone, so its own changes don't notify it.
+  for (const b of new Set(found.map((f) => f.base))) { try { const w = await api.whoami(b); if (w && w.name) me[b] = w.name; } catch { /* keep the last known */ } }
+  await store.setMe(me);
   const now = new Date();
   const toShow: { key: string; title: string; body: string; data: Record<string, string> }[] = [];
   for (const f of found) {

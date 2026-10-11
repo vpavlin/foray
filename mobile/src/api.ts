@@ -33,7 +33,9 @@ async function req<T>(base: string, path: string, init: { method?: string; body?
 }
 
 const enc = encodeURIComponent;
+export interface WhoAmI { name: string; mesh: string; local: boolean; can_write: boolean; machine: string }
 export const api = {
+  whoami: (b: string) => req<WhoAmI>(b, "/v1/whoami", {}, 5000),
   lists: (b: string) => req<{ machine: string; lists: ListInfo[] }>(b, "/v1/lists", {}, 5000),
   list: (b: string, l: string) => req<{ list: ListInfo; items: Item[]; asks?: { from: string; title: string; at: string }[]; suggest_from?: string[] }>(b, `/v1/lists/${enc(l)}`),
   changes: (b: string, l: string, since: number) => req<{ seq: number; events: Change[]; reset?: boolean }>(b, `/v1/lists/${enc(l)}/changes?since=${since}`),
