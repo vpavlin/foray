@@ -83,6 +83,66 @@ export function sections(items: Item[]): Sections {
   return s;
 }
 
+// ── sorting and grouping (as the Basecamp view does) ─────────────────────────
+export type SortBy = "due" | "newest" | "changed" | "az";
+export type GroupBy = "state" | "none" | "who" | "tag";
+export const SORTS: { v: SortBy; label: string }[] = [
+  { v: "due", label: "Due" }, { v: "newest", label: "Newest" }, { v: "changed", label: "Changed" }, { v: "az", label: "A–Z" },
+];
+export const GROUPS: { v: GroupBy; label: string }[] = [
+  { v: "state", label: "State" }, { v: "none", label: "None" }, { v: "who", label: "Who" }, { v: "tag", label: "Tag" },
+];
+export interface Group { key: string; title: string; items: Item[] }
+
+export function compareBy(sort: SortBy): (a: Item, b: Item) => number {
+  const desc = (x?: string, y?: string) => (y || "").localeCompare(x || "");
+  switch (sort) {
+    case "newest": return (a, b) => desc(a.created, b.created);
+    case "changed": return (a, b) => desc(a.updated, b.updated);
+    case "az": return (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+    default: return (a, b) => dueKey(a) - dueKey(b) || desc(a.updated, b.updated);   // no due date last
+  }
+}
+
+/** The assistant's last word on an active item is a question: it's waiting on you. */
+export function needsYou(it: Item, session: string | undefined): boolean {
+  if (!session || !(it.state === "inbox" || it.state === "open" || it.state === "waiting")) return false;
+  const c = it.comments || [];
+  const last = c[c.length - 1];
+  return !!last && (last.by === session || last.by.endsWith("/" + session)) && isQuestion(last.text);
+}
+
+/**
+ * The list as shown: "Needs you" first (and not again below), then the active items grouped and
+ * sorted, then done/dropped (folded by the screen) and suggestions apart. Empty groups are left out.
+ */
+export function arrange(items: Item[], session: string | undefined, sort: SortBy, group: GroupBy):
+    { needs: Item[]; groups: Group[]; done: Item[]; suggested: Item[] } {
+  const cmp = compareBy(sort);
+  const active = items.filter((it) => it.state === "inbox" || it.state === "open" || it.state === "waiting");
+  const needs = active.filter((it) => needsYou(it, session)).sort(cmp);
+  const rest = active.filter((it) => !needsYou(it, session));
+  const groups: Group[] = [];
+  const push = (key: string, title: string, xs: Item[]) => { if (xs.length) groups.push({ key, title, items: [...xs].sort(cmp) }); };
+  if (group === "none") push("all", "To do", rest);
+  else if (group === "who" || group === "tag") {
+    const by = new Map<string, Item[]>();
+    for (const it of rest) {
+      const keys = group === "who" ? [(it.who || "").trim()] : ((it.tags || []).length ? it.tags! : [""]);
+      for (const k of new Set(keys)) (by.get(k) || by.set(k, []).get(k)!).push(it);
+    }
+    const order = [...by.keys()].sort((x, y) => (x === "" ? 1 : y === "" ? -1 : x.localeCompare(y, undefined, { sensitivity: "base" })));
+    for (const k of order) push(`${group}:${k}`, k ? (group === "tag" ? "#" + k : k) : (group === "who" ? "Anyone" : "No tag"), by.get(k)!);
+  } else {
+    push("inbox", "New", rest.filter((it) => it.state === "inbox"));
+    push("open", "To do", rest.filter((it) => it.state === "open"));
+    push("waiting", "Waiting", rest.filter((it) => it.state === "waiting"));
+  }
+  const done = items.filter((it) => it.state === "done" || it.state === "dropped").sort(compareBy("changed"));
+  const suggested = items.filter((it) => it.state === "suggested").sort(compareBy("newest"));
+  return { needs, groups, done, suggested };
+}
+
 /** Fold /changes events into the items: the latest event for an id is its state. */
 export function applyChanges(items: Item[], events: Change[]): Item[] {
   if (!events.length) return items;
