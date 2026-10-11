@@ -220,24 +220,69 @@ Item {
     // What shows, in order: what to do (soonest due first), waiting, the inbox,
     // and what is done, folded.
     property bool showDone: false
+    // How the list is ordered and grouped; each device keeps its own.
+    property string sortBy: "due"     // due, created, updated, title
+    property string groupBy: "state"  // state, none, who, tag
+    function setView(sort, group) {
+        sortBy = sort; groupBy = group
+        call("foray_core", "setPref", ["sort", sort])
+        call("foray_core", "setPref", ["group", group])
+    }
+    Component.onCompleted: {
+        var s = String(call("foray_core", "getPref", ["sort"]) || ""), g = String(call("foray_core", "getPref", ["group"]) || "")
+        if (["due", "created", "updated", "title"].indexOf(s) >= 0) sortBy = s
+        if (["state", "none", "who", "tag"].indexOf(g) >= 0) groupBy = g
+    }
     function dueKey(it) { return it.due ? it.due : "9999" }
-    function section(state) {
-        var out = items.filter(function (it) { return it.state === state })
-        out.sort(function (a, b) { return dueKey(a) < dueKey(b) ? -1 : (dueKey(a) > dueKey(b) ? 1 : 0) })
-        return out
+    function cmp(a, b) {
+        function by(x, y) { return x < y ? -1 : (x > y ? 1 : 0) }
+        switch (sortBy) {
+        case "created": return by(b.created || "", a.created || "")          // newest first
+        case "updated": return by(b.updated || "", a.updated || "")          // last changed first
+        case "title": return String(a.title).localeCompare(String(b.title), Qt.locale().name)
+        default: return by(dueKey(a), dueKey(b)) || by(b.updated || "", a.updated || "")
+        }
+    }
+    // Waiting on them: the assistant's last word on it is a question.
+    function needsYou(it) {
+        var c = it.comments || []
+        if (!c.length || !current || it.state === "done" || it.state === "dropped") return false
+        var last = c[c.length - 1]
+        return last.by === current.session && /\?\s*$/.test(last.text || "")
     }
     readonly property var rows: {
         var out = []
-        function add(state, label, folded) {
-            var s = section(state)
-            if (s.length === 0) return
-            out.push({ header: true, label: label, count: s.length, state: state })
-            if (!folded) for (var i = 0; i < s.length; i++) out.push({ header: false, item: s[i] })
+        function push(label, list, folded, key) {
+            if (list.length === 0) return
+            list.sort(cmp)
+            out.push({ header: true, label: label, count: list.length, state: key })
+            if (!folded) for (var i = 0; i < list.length; i++) out.push({ header: false, item: list[i] })
         }
-        add("inbox", "New", false)
-        add("open", "To do", false)
-        add("waiting", "Waiting", false)
-        add("done", "Done", !showDone)
+        var active = items.filter(function (it) { return it.state === "inbox" || it.state === "open" || it.state === "waiting" })
+        var needs = active.filter(needsYou)
+        push("Needs you", needs, false, "needs")
+        var rest = active.filter(function (it) { return !needsYou(it) })
+        if (groupBy === "none") {
+            push("To do", rest, false, "open")
+        } else if (groupBy === "who" || groupBy === "tag") {
+            var groups = {}, order = []
+            rest.forEach(function (it) {
+                var keys = groupBy === "who" ? [it.who || ""] : ((it.tags && it.tags.length) ? it.tags : [""])
+                keys.forEach(function (k) {
+                    if (!groups[k]) { groups[k] = []; order.push(k) }
+                    groups[k].push(it)
+                })
+            })
+            order.sort(function (x, y) { return x === "" ? 1 : (y === "" ? -1 : x.localeCompare(y)) })
+            order.forEach(function (k) {
+                push(k !== "" ? (groupBy === "tag" ? "#" + k : k) : (groupBy === "who" ? "Anyone" : "No tag"), groups[k], false, groupBy + ":" + k)
+            })
+        } else {
+            push("New", rest.filter(function (it) { return it.state === "inbox" }), false, "inbox")
+            push("To do", rest.filter(function (it) { return it.state === "open" }), false, "open")
+            push("Waiting", rest.filter(function (it) { return it.state === "waiting" }), false, "waiting")
+        }
+        push("Done", items.filter(function (it) { return it.state === "done" }), !showDone, "done")
         return out
     }
     readonly property int pendingSuggestions: items.filter(function (it) { return it.state === "suggested" }).length
@@ -413,6 +458,33 @@ Item {
                 }
             }
             Text { visible: root.said !== ""; text: root.said; color: cRust; font.pixelSize: 12 }
+
+            // Sort and group.
+            Flow {
+                Layout.fillWidth: true
+                spacing: 6
+                Text { text: "sort"; color: cAsh; font.pixelSize: 11; height: 20; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: [["due", "due"], ["created", "newest"], ["updated", "changed"], ["title", "A–Z"]]
+                    delegate: Text {
+                        text: modelData[1]; height: 20; verticalAlignment: Text.AlignVCenter
+                        color: root.sortBy === modelData[0] ? cPhosphor : cAsh; font.pixelSize: 11
+                        font.underline: root.sortBy === modelData[0]
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.setView(modelData[0], root.groupBy) }
+                    }
+                }
+                Item { width: 14; height: 20 }
+                Text { text: "group"; color: cAsh; font.pixelSize: 11; height: 20; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: [["state", "state"], ["none", "none"], ["who", "who"], ["tag", "tag"]]
+                    delegate: Text {
+                        text: modelData[1]; height: 20; verticalAlignment: Text.AlignVCenter
+                        color: root.groupBy === modelData[0] ? cPhosphor : cAsh; font.pixelSize: 11
+                        font.underline: root.groupBy === modelData[0]
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.setView(root.sortBy, modelData[0]) }
+                    }
+                }
+            }
 
             ListView {
                 Layout.fillWidth: true

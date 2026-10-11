@@ -40,6 +40,7 @@ Item {
     Timer {
         interval: 2500; running: true
         onTriggered: {
+            console.error("ROWS0=" + view.rows.map(function (r) { return r.header ? "[" + r.label + "]" : r.item.title }).join(" | "))
             console.error("LISTS=" + view.lists.length + " CURRENT=" + (view.current ? view.current.name : "-") + " ITEMS=" + view.items.length)
             var tires = view.items.filter(function (i) { return i.title === "Buy winter tires" })[0]
             view.selectedId = tires ? tires.id : ""
@@ -57,7 +58,13 @@ Item {
                     var c = JSON.parse(top.http("GET", "/v1/lists/home/context"))
                     console.error("CONTEXT=" + c.place + "|" + c.currency + "|" + (c.notes.indexOf("Octavia") >= 0))
                     view.editingContext = true
-                    settle.next = function () { top.shot("foray-about.png", function () { Qt.quit() }) }
+                    settle.next = function () { top.shot("foray-about.png", function () {
+                        view.editingContext = false
+                        view.setView("title", "tag")
+                        console.error("ROWS=" + view.rows.map(function (r) { return r.header ? "[" + r.label + "]" : r.item.title }).join(" | "))
+                        settle.next = function () { top.shot("foray-sorted.png", function () { view.setView("due", "state"); Qt.quit() }) }
+                        settle.restart()
+                    }) }
                     settle.restart()
                 }) }
                 settle.restart()
