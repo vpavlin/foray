@@ -110,4 +110,18 @@ func TestTheSessionWorksTheList(t *testing.T) {
 		t.Fatalf("a nonsense decision was taken: %s", out)
 	}
 	inW.Close()
+
+	// Another session on the machine is offered the tools and cannot use them.
+	r2, w2 := io.Pipe()
+	o2r, o2w := io.Pipe()
+	go Serve(r2, o2w, Client{Base: local.URL, List: "home", Session: "webapp"})
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "list_items", "arguments": map[string]any{}}})
+	w2.Write(append(b, '\n'))
+	sc := bufio.NewScanner(o2r)
+	sc.Scan()
+	if !strings.Contains(sc.Text(), "looked after by") || !strings.Contains(sc.Text(), `"isError":true`) {
+		t.Fatalf("another session used the list: %s", sc.Text())
+	}
+	w2.Close()
 }

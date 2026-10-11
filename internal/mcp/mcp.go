@@ -114,8 +114,29 @@ func line(it item) string {
 	return s
 }
 
+// owns checks that this session is the list's own: pi reads its MCP servers
+// from one file for every session on the machine, so every pi session there
+// is offered these tools, and only the list's session may use them.
+func (c Client) owns() error {
+	b, err := c.do("GET", "", nil)
+	if err != nil {
+		return err
+	}
+	var l struct {
+		List struct{ Session string } `json:"list"`
+	}
+	json.Unmarshal(b, &l)
+	if l.List.Session == "" || l.List.Session != c.Session {
+		return fmt.Errorf("the %s list is looked after by %q, not %q", c.List, l.List.Session, c.Session)
+	}
+	return nil
+}
+
 // Call runs one tool.
 func (c Client) Call(tool string, a Args) (string, error) {
+	if err := c.owns(); err != nil {
+		return "", err
+	}
 	switch tool {
 	case "list_items":
 		q := ""
