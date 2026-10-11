@@ -118,11 +118,12 @@ func TestTheSessionWorksTheList(t *testing.T) {
 	if out, _ = call("get_context", map[string]any{}); !strings.Contains(out, "Do not guess") {
 		t.Fatalf("an empty context: %s", out)
 	}
-	req, _ = http.NewRequest("PUT", mesh.URL+"/v1/lists/home/context", strings.NewReader(`{"place":"Prague","currency":"CZK","notes":"car: Octavia 2019"}`))
+	req, _ = http.NewRequest("PUT", mesh.URL+"/v1/lists/home/context", strings.NewReader(`{"place":"Prague","currency":"CZK","language":"EN","notes":"car: Octavia 2019"}`))
 	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 200 {
 		t.Fatalf("set context: %v %v", err, resp.Status)
 	}
-	if out, _ = call("get_context", map[string]any{}); !strings.Contains(out, "Place: Prague") || !strings.Contains(out, "Octavia") {
+	if out, _ = call("get_context", map[string]any{}); !strings.Contains(out, "Place: Prague") || !strings.Contains(out, "Octavia") ||
+		!strings.Contains(out, "Language: EN — write every comment") {
 		t.Fatalf("get_context: %s", out)
 	}
 

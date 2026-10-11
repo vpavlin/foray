@@ -241,10 +241,16 @@ func (c Client) context() (string, error) {
 	var x struct{ Place, Language, Currency, Notes string }
 	json.Unmarshal(b, &x)
 	var out []string
-	for _, f := range [][2]string{{"Place", x.Place}, {"Language", x.Language}, {"Currency", x.Currency}} {
+	for _, f := range [][2]string{{"Place", x.Place}, {"Currency", x.Currency}} {
 		if f[1] != "" {
 			out = append(out, f[0]+": "+f[1])
 		}
+	}
+	// Said as a rule, not a fact: the examples in the session's instructions
+	// are in Czech, and a model follows examples over a field.
+	if x.Language != "" {
+		out = append(out, "Language: "+x.Language+" — write every comment, summary and answer on this list in this language, "+
+			"whatever language the examples in your instructions, the item or an agent's reply are in.")
 	}
 	if x.Notes != "" {
 		out = append(out, "Notes:\n"+x.Notes)

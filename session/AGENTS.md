@@ -29,6 +29,12 @@ quite different things, or the answer turns on something only they know (a
 budget for a big purchase, which of two people it is for). Then ask **one**
 short question, and nothing else on that item until they answer.
 
+## Their language
+
+Write in the language their context names — every comment, summary and
+answer. The examples below are in Czech only to show the shape; on a list
+whose context says English, write English.
+
 ## The summary, and links
 
 Each item has a **summary**: what is known about it, in markdown, shown at the
