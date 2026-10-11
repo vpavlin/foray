@@ -193,16 +193,64 @@ Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 4. **Offline both ways**, if it is wanted: the list as a multi-writer log
    over Logos Delivery, the way Scala and Kith sync.
 
-## 9. Open questions
+## 9. Decided (2026-10-11)
 
-1. **Name.** "Shrooms Todo" is a working name.
-2. **Where the service runs.** The machine that is always on at home — pi5?
-3. **Storage:** SQLite, or an event log from the start (cheaper move to
-   phase 4)?
-4. **Who triages:** pi on a local model by default, Claude when it asks for
-   help?
-5. **Notifications on the wife's phone:** the Todo app's own, or through
-   Scala reminders only?
-6. **Agents adding:** every agent on the mesh, or only sessions you list?
-7. **`putEvent` public:** the bridge is simpler and safer with it; ask Scala
+| | |
+|---|---|
+| **Name** | Shrooms Todo; a mushroom word is welcome (below) |
+| **Host** | jimmy-crib |
+| **Storage** | an append-only event log per list (JSON lines), folded into state and snapshotted. One machine today, and the same log is what a later multi-writer sync (phase 4) replicates, so nothing is rewritten for it |
+| **Triage** | pi on a cheap Venice model — `deepseek-v4-1-flash` or `z-ai-glm-5-3-flash`, what pi5, proteus and scribe already use |
+| **People** | vpavlin, and his wife: shrooms and the Todo app on her devices, on the home mesh |
+| **Agents that may add** | a configurable allow list of `MACHINE/SESSION`; at first only `laptop/shrooms` |
+
+### Agents adding, and who checks
+
+"An agent asks the Todo session, and the session decides" stays the flow, but
+the **gate is not the session's judgement** — a model can be talked into
+anything. Suggestions go to the todo service first, as an A2A agent of its
+own (`jimmy-crib/todo`): it identifies the caller the way shrooms-agent does
+(the machine from the mesh, the session from what its agent says), checks the
+allow list, puts the suggestion in the inbox marked with who sent it, and
+hands it to `home-todo` to triage. A caller not on the list is refused, and
+appears in the app as "wants to add items — allow?", the way refused file
+senders do in Shrooms Agents.
+
+## 10. Before the home mesh gets a second person
+
+Two things to do first, neither of them code:
+
+1. **jimmy-crib is on the office mesh only.** The home list has to live on
+   the home mesh, so jimmy-crib joins it — an invite from the laptop (whose
+   admin key the home mesh is), and a restart of jimmy-crib's daemon, which
+   carries Jimmy and the publisher. Planned, not ad hoc.
+2. **Every agent session on a home-mesh machine is visible from the home
+   mesh** unless limited: a session with no `meshes` setting serves every
+   mesh its machine is on. The laptop is on the home mesh today, and so will
+   jimmy-crib be — so before her phone joins, every session on those machines
+   that is not meant for the household gets `meshes: [office]` (or whichever).
+   Otherwise her phone could open them and drive them. Worth a default in
+   shrooms-agent ("new sessions serve only these meshes"); until then, by hand.
+
+## 11. A name from the mycelium
+
+| Name | Why |
+|---|---|
+| **Foray** | a mushroom foray is the trip out to gather: errands, the shopping, the things to bring home |
+| **Pinhead** / **Pins** | pins are the first sign of mushrooms — an item before it has grown into anything; and you pin what matters |
+| **Flush** | the wave of mushrooms that comes up together: a weekend's worth of things to do |
+| **Basket** | what a forager carries: the household's list |
+| **Fruiting** | the mycelium's work becoming visible — the thing actually done |
+
+Recommendation: **Foray**. It says "going out to get things done" in the
+mushroom world's own word, it is short, and "Shrooms Foray" reads as one of
+the family.
+
+## 12. Open questions
+
+1. **Venice key** for pi on jimmy-crib: the one pi5, proteus and scribe use,
+   or a key of its own (its own budget, its own "runs out" warning)?
+2. **Notifications on the wife's phone:** the Todo app's own, or Scala
+   reminders only?
+3. **`putEvent` public:** the bridge is simpler and safer with it; ask Scala
    to ship 0.12.4 publicly before phase 3.
