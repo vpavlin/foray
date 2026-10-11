@@ -17,10 +17,15 @@ import { registerBackground } from "./src/background";
 import { findAgents } from "./src/agents";
 import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, validAgent, trustProblems, Helper, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl } from "./src/model";
 
+// The Shrooms palette, dark like the Basecamp view and the Shrooms app. Colour carries meaning:
+// phosphor = primary / done, amber = overdue or needs attention, rust = errors, violet = the
+// assistant, sky = links in text and "needs you". Everything else is bone and ash on void.
 const C = {
-  bg: "#F4F5F1", card: "#FFFFFF", text: "#1E2320", sub: "#67706A", faint: "#9AA29C", line: "#E2E5DF",
-  accent: "#3D7A57", accentSoft: "#E3EFE7", warn: "#B4511F", warnSoft: "#F8E7DC", blue: "#2F6690",
+  bg: "#0b0d0f", card: "#14181c", raised: "#1b2026", line: "#262d35",
+  text: "#e2e7eb", sub: "#7d8791", faint: "#56606a",
+  accent: "#35f0a0", accentSoft: "#1b2026", warn: "#f0b429", rust: "#e05252", violet: "#9a7bff", blue: "#5aa9ff",
 };
+const MONO = "monospace";
 const toast = (m: string) => { if (Platform.OS === "android") ToastAndroid.show(m, ToastAndroid.SHORT); };
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -62,7 +67,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={["top", "bottom"]}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <Main />
       </SafeAreaView>
     </SafeAreaProvider>
@@ -137,7 +142,7 @@ function Main() {
         <Text style={s.appTitle}>Foray</Text>
         <Pressable hitSlop={10} onPress={() => setSettings(true)}><Text style={s.headerLink}>Computers</Text></Pressable>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} colors={[C.accent]} progressBackgroundColor={C.card} />}>
         {machines.length === 0 && <AddMachine first onAdded={refresh} />}
         {machines.length > 0 && found.length === 0 && !loading && (
           <View style={s.card}>
@@ -218,7 +223,7 @@ function Settings({ onClose }: { onClose: () => void }) {
         {ms.map((m) => (
           <View key={m.address + m.port} style={[s.card, { flexDirection: "row", alignItems: "center" }]}>
             <Text style={[s.body, { flex: 1 }]} numberOfLines={1}>{m.address}{m.port !== 7389 ? `  (port ${m.port})` : ""}</Text>
-            <Pressable hitSlop={8} onPress={() => remove(m)}><Text style={{ color: C.warn }}>Forget</Text></Pressable>
+            <Pressable hitSlop={8} onPress={() => remove(m)}><Text style={{ fontFamily: MONO, color: C.rust }}>Forget</Text></Pressable>
           </View>
         ))}
         <AddMachine onAdded={load} />
@@ -317,7 +322,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
     return (
       <Pressable style={s.row} onPress={() => setSel(it.id)}>
         <Pressable hitSlop={10} onPress={() => toggleDone(it)} style={[s.check, done && { backgroundColor: C.accent, borderColor: C.accent }]}>
-          {done && <Text style={{ color: "#fff", fontSize: 13, fontWeight: "700" }}>✓</Text>}
+          {done && <Text style={{ fontFamily: MONO, color: C.bg, fontSize: 13, fontWeight: "700" }}>✓</Text>}
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={[s.body, done && { color: C.faint, textDecorationLine: "line-through" }]}>{it.title}</Text>
@@ -360,7 +365,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
         <View style={{ flex: 1, alignItems: "center" }}>
           <Text style={[s.screenTitle, { flex: 0 }]} numberOfLines={1}>{list.title || list.name}</Text>
           <Pressable hitSlop={8} onPress={() => setAboutOpen(true)}>
-            <Text style={{ fontSize: 13, color: hasContext(ctx) ? C.blue : C.warn }}>{hasContext(ctx) ? "About us" : "Tell the assistant about you"}</Text>
+            <Text style={{ fontFamily: MONO, fontSize: 13, color: hasContext(ctx) ? C.blue : C.warn }}>{hasContext(ctx) ? "About us" : "Tell the assistant about you"}</Text>
           </Pressable>
         </View>
         <Pressable hitSlop={10} onPress={() => setViewOpen(true)} style={{ width: 50, alignItems: "flex-end" }}>
@@ -374,16 +379,16 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
           <Pressable onPress={addOne} disabled={!draft.trim()} style={[s.primaryBtn, { paddingHorizontal: 16 }, !draft.trim() && { opacity: 0.5 }]}><Text style={s.primaryBtnT}>Add</Text></Pressable>
         </View>
       )}
-      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 14 }} refreshControl={<RefreshControl refreshing={false} onRefresh={load} />} keyboardShouldPersistTaps="handled">
-        {!!error && <Text style={[s.sub, { color: C.warn }]}>{error}</Text>}
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 14 }} refreshControl={<RefreshControl refreshing={false} onRefresh={load} colors={[C.accent]} progressBackgroundColor={C.card} />} keyboardShouldPersistTaps="handled">
+        {!!error && <Text style={[s.sub, { color: C.rust }]}>{error}</Text>}
         {readOnly && <Text style={s.hint}>This phone can look at the list but not change it.</Text>}
         {asks.map((a) => (
           <View key={a.from} style={[s.card, { backgroundColor: C.accentSoft }]}>
             <Text style={s.body}>{a.from} would like to suggest things for this list.</Text>
             {!!a.title && <Text style={s.sub}>First suggestion: “{a.title}”</Text>}
             <View style={{ flexDirection: "row", gap: 18, marginTop: 8 }}>
-              <Pressable onPress={() => guard(async () => { await api.allow(base, info.name, a.from); load(); }, "Allowed")}><Text style={{ color: C.accent, fontWeight: "600" }}>Allow</Text></Pressable>
-              <Pressable onPress={() => guard(async () => { await api.ignore(base, info.name, a.from); load(); }, "Ignored")}><Text style={{ color: C.sub }}>Ignore</Text></Pressable>
+              <Pressable onPress={() => guard(async () => { await api.allow(base, info.name, a.from); load(); }, "Allowed")}><Text style={{ fontFamily: MONO, color: C.accent, fontWeight: "600" }}>Allow</Text></Pressable>
+              <Pressable onPress={() => guard(async () => { await api.ignore(base, info.name, a.from); load(); }, "Ignored")}><Text style={{ fontFamily: MONO, color: C.sub }}>Ignore</Text></Pressable>
             </View>
           </View>
         ))}
@@ -406,14 +411,14 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
           <Pressable style={s.sheet} onPress={() => {}}>
             <Text style={s.label}>Sort by</Text>
             <View style={s.chips}>{SORTS.map((o) => (
-              <Pressable key={o.v} style={[s.chip, view.sort === o.v && { backgroundColor: C.accent, borderColor: C.accent }]} onPress={() => pickView({ ...view, sort: o.v })}>
-                <Text style={[s.chipT, view.sort === o.v && { color: "#fff" }]}>{o.label}</Text>
+              <Pressable key={o.v} style={[s.chip, view.sort === o.v && s.chipOn]} onPress={() => pickView({ ...view, sort: o.v })}>
+                <Text style={s.chipT}>{o.label}</Text>
               </Pressable>
             ))}</View>
             <Text style={s.label}>Group by</Text>
             <View style={s.chips}>{GROUPS.map((o) => (
-              <Pressable key={o.v} style={[s.chip, view.group === o.v && { backgroundColor: C.accent, borderColor: C.accent }]} onPress={() => pickView({ ...view, group: o.v })}>
-                <Text style={[s.chipT, view.group === o.v && { color: "#fff" }]}>{o.label}</Text>
+              <Pressable key={o.v} style={[s.chip, view.group === o.v && s.chipOn]} onPress={() => pickView({ ...view, group: o.v })}>
+                <Text style={s.chipT}>{o.label}</Text>
               </Pressable>
             ))}</View>
             <Text style={[s.hint, { marginTop: 10 }]}>What the assistant is waiting on you for always comes first. This phone remembers your choice.</Text>
@@ -499,8 +504,8 @@ function AboutUs({ base, list, ctx, me, readOnly, onClose, onSaved, onReadOnly }
           placeholder={"The car: 2019 Octavia, tyres 205/55 R16\nWe shop at …"} placeholderTextColor={C.faint} />
         {notes.length > 3600 && <Text style={s.hint}>{4000 - notes.length} characters left</Text>}
         <HelpersEditor base={base} mesh={list.mesh} helpers={helpers} readOnly={readOnly} onChange={(h) => { typed.current = true; setHelpers(h); }} />
-        {!!error && <Text style={[s.sub, { color: C.warn }]}>{error}</Text>}
-        {trustErr.map((t) => <Text key={t} style={[s.sub, { color: C.warn }]}>{t}</Text>)}
+        {!!error && <Text style={[s.sub, { color: C.rust }]}>{error}</Text>}
+        {trustErr.map((t) => <Text key={t} style={[s.sub, { color: C.rust }]}>{t}</Text>)}
         {!readOnly && <Pressable onPress={save} disabled={busy || !dirty} style={[s.primaryBtn, (busy || !dirty) && { opacity: 0.5 }]}><Text style={s.primaryBtnT}>{busy ? "Saving…" : "Save"}</Text></Pressable>}
         {readOnly && <Text style={s.hint}>This phone can read this but not change it.</Text>}
         {!!cur?.by && <Text style={s.hint}>Last changed by {whoLabel(cur.by, list.session, me)}{cur.updated ? `, ${new Date(cur.updated).toLocaleString()}` : ""}.</Text>}
@@ -548,7 +553,7 @@ function Markdown({ text }: { text: string }) {
 function CopyLink({ text }: { text: string }) {
   return (
     <Pressable hitSlop={6} onPress={() => { Clipboard.setStringAsync(text).then(() => toast("Copied")).catch(() => {}); }} style={{ marginTop: 4 }}>
-      <Text style={{ fontSize: 12, color: C.accent }}>Copy</Text>
+      <Text style={{ fontFamily: MONO, fontSize: 12, color: C.accent }}>Copy</Text>
     </Pressable>
   );
 }
@@ -583,11 +588,11 @@ function HelpersEditor({ base, mesh, helpers, readOnly, onChange }: {
             <Text style={s.body}>{h.agent}</Text>
             {!!h.for && <Text style={s.sub}>{h.for}</Text>}
           </View>
-          {!readOnly && <Pressable hitSlop={8} onPress={() => onChange(helpers.filter((x) => x.agent !== h.agent))}><Text style={{ color: C.warn, fontSize: 13 }}>Remove</Text></Pressable>}
+          {!readOnly && <Pressable hitSlop={8} onPress={() => onChange(helpers.filter((x) => x.agent !== h.agent))}><Text style={{ fontFamily: MONO, color: C.rust, fontSize: 13 }}>Remove</Text></Pressable>}
         </View>
       ))}
       {!readOnly && !adding && helpers.length < 20 && (
-        <Pressable hitSlop={6} onPress={open} style={{ alignSelf: "flex-start" }}><Text style={{ color: C.accent, fontSize: 14 }}>+ helper</Text></Pressable>
+        <Pressable hitSlop={6} onPress={open} style={{ alignSelf: "flex-start" }}><Text style={{ fontFamily: MONO, color: C.accent, fontSize: 14 }}>+ helper</Text></Pressable>
       )}
       {adding && (
         <View style={[s.card, { gap: 8 }]}>
@@ -639,15 +644,15 @@ function SummaryBox({ item, list, me, readOnly, save }: {
     </View>
   );
   if (!summary) return readOnly ? null : (
-    <Pressable hitSlop={6} onPress={start} style={{ alignSelf: "flex-start" }}><Text style={{ color: C.accent, fontSize: 14 }}>+ Summary</Text></Pressable>
+    <Pressable hitSlop={6} onPress={start} style={{ alignSelf: "flex-start" }}><Text style={{ fontFamily: MONO, color: C.accent, fontSize: 14 }}>+ Summary</Text></Pressable>
   );
   return (
-    <View style={[s.card, { backgroundColor: "#F3F7F4" }]}>
+    <View style={[s.card, { borderColor: C.line, borderLeftColor: C.violet, borderLeftWidth: 2 }]}>
       <Text style={[s.label, { marginTop: 0, marginBottom: 6 }]}>Summary{item.summary_by ? ` · ${whoLabel(item.summary_by, list.session, me)}` : ""}</Text>
       <Markdown text={summary} />
       <View style={{ flexDirection: "row", gap: 18 }}>
         <CopyLink text={summary} />
-        {!readOnly && <Pressable hitSlop={6} onPress={start} style={{ marginTop: 4 }}><Text style={{ fontSize: 12, color: C.accent }}>Edit</Text></Pressable>}
+        {!readOnly && <Pressable hitSlop={6} onPress={start} style={{ marginTop: 4 }}><Text style={{ fontFamily: MONO, fontSize: 12, color: C.accent }}>Edit</Text></Pressable>}
       </View>
     </View>
   );
@@ -734,8 +739,8 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
           <View style={s.chips}>
             {STATES.map((x) => (
               <Pressable key={x.s} onPress={() => !readOnly && item.state !== x.s && patch({ state: x.s })}
-                style={[s.chip, item.state === x.s && { backgroundColor: C.accent, borderColor: C.accent }]}>
-                <Text style={[s.chipT, item.state === x.s && { color: "#fff" }]}>{x.label}</Text>
+                style={[s.chip, item.state === x.s && s.chipOn]}>
+                <Text style={s.chipT}>{x.label}</Text>
               </Pressable>
             ))}
           </View>
@@ -743,8 +748,8 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
             <View style={[s.card, { backgroundColor: C.accentSoft }]}>
               <Text style={s.body}>Suggested by {whoLabel(item.suggested_by, list.session, me)}.</Text>
               <View style={{ flexDirection: "row", gap: 18, marginTop: 6 }}>
-                <Pressable onPress={() => patch({ state: "open" }, "Added to the list")}><Text style={{ color: C.accent, fontWeight: "600" }}>Add to the list</Text></Pressable>
-                <Pressable onPress={() => patch({ state: "dropped" }, "Dismissed")}><Text style={{ color: C.sub }}>No thanks</Text></Pressable>
+                <Pressable onPress={() => patch({ state: "open" }, "Added to the list")}><Text style={{ fontFamily: MONO, color: C.accent, fontWeight: "600" }}>Add to the list</Text></Pressable>
+                <Pressable onPress={() => patch({ state: "dropped" }, "Dismissed")}><Text style={{ fontFamily: MONO, color: C.sub }}>No thanks</Text></Pressable>
               </View>
             </View>
           )}
@@ -789,8 +794,8 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
             <View style={{ gap: 8 }}>
               <Text style={s.label}>Ask the assistant to help</Text>
               <View style={s.chips}>{HELP_KINDS.map((k) => (
-                <Pressable key={k.kind} style={[s.chip, askKind === k.kind && { backgroundColor: C.accent, borderColor: C.accent }]} onPress={() => setAskKind(askKind === k.kind ? null : k.kind)}>
-                  <Text style={[s.chipT, askKind === k.kind && { color: "#fff" }]}>{k.label}</Text>
+                <Pressable key={k.kind} style={[s.helpPill, askKind === k.kind && s.helpPillOn]} onPress={() => setAskKind(askKind === k.kind ? null : k.kind)}>
+                  <Text style={[s.helpPillT, askKind === k.kind && { color: C.bg }]}>{k.label}</Text>
                 </Pressable>
               ))}</View>
               {askKind && <>
@@ -800,7 +805,7 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
                     <Text style={s.sub}>Via</Text>
                     {[{ agent: "", for: "" }, ...helpers].map((h) => (
                       <Pressable key={h.agent || "-"} onPress={() => setAskTo(h.agent)}
-                        style={[s.chip, { paddingVertical: 4 }, askTo === h.agent && { borderColor: C.accent, backgroundColor: C.accentSoft }]}>
+                        style={[s.chip, { paddingVertical: 4 }, askTo === h.agent && { borderColor: C.violet, backgroundColor: C.raised }]}>
                         <Text style={[s.chipT, { fontSize: 12 }]}>{h.agent || "the assistant decides"}</Text>
                       </Pressable>
                     ))}
@@ -820,7 +825,7 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
             const bot = !!list.session && (c.by === list.session || c.by.endsWith("/" + list.session));
             return (
               <View key={i} style={[s.bubble, mine ? s.bubbleMine : bot ? s.bubbleBot : null]}>
-                <Text style={s.bubbleWho}>{cap(whoLabel(c.by, list.session, me))}</Text>
+                <Text style={[s.bubbleWho, bot && { color: C.violet }]}>{cap(whoLabel(c.by, list.session, me))}</Text>
                 {/* Agents write markdown; people's own notes are shown as typed. */}
                 {mine || (!bot && !c.by.includes("/")) ? <Text style={s.body} selectable>{c.text}</Text> : <><Markdown text={c.text} /><CopyLink text={c.text} /></>}
               </View>
@@ -842,40 +847,44 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
 
 const s = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
-  appTitle: { fontSize: 26, fontWeight: "700", color: C.text, letterSpacing: 0.2 },
-  screenTitle: { fontSize: 18, fontWeight: "600", color: C.text, flex: 1, textAlign: "center" },
-  headerLink: { fontSize: 15, color: C.accent },
-  groupLabel: { fontSize: 12, fontWeight: "600", color: C.sub, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 4 },
-  card: { backgroundColor: C.card, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: C.line },
-  card0: { backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.line, overflow: "hidden" },
-  cardTitle: { fontSize: 18, fontWeight: "600", color: C.text, marginBottom: 4 },
-  listCard: { backgroundColor: C.card, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: C.line, gap: 2 },
-  listTitle: { fontSize: 18, fontWeight: "600", color: C.text },
-  body: { fontSize: 15, color: C.text, lineHeight: 21 },
-  sub: { fontSize: 13, color: C.sub, lineHeight: 18 },
-  hint: { fontSize: 12, color: C.faint, lineHeight: 17 },
-  label: { fontSize: 12, fontWeight: "600", color: C.sub, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 6 },
-  input: { backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: C.text },
-  titleInput: { fontSize: 22, fontWeight: "600", color: C.text, paddingVertical: 4 },
-  primaryBtn: { backgroundColor: C.accent, borderRadius: 10, paddingVertical: 11, alignItems: "center", justifyContent: "center" },
-  primaryBtnT: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  appTitle: { fontSize: 24, fontWeight: "300", color: C.text, letterSpacing: -0.5, fontFamily: MONO },
+  screenTitle: { fontSize: 15, fontWeight: "500", color: C.text, flex: 1, textAlign: "center", fontFamily: MONO },
+  headerLink: { fontSize: 13, color: C.accent, fontFamily: MONO },
+  groupLabel: { fontSize: 10, fontWeight: "500", color: C.sub, textTransform: "uppercase", letterSpacing: 1.2, marginTop: 6, fontFamily: MONO },
+  card: { backgroundColor: C.card, borderRadius: 10, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
+  card0: { backgroundColor: C.card, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, overflow: "hidden" },
+  cardTitle: { fontSize: 15, fontWeight: "500", color: C.text, marginBottom: 4, fontFamily: MONO },
+  listCard: { backgroundColor: C.card, borderRadius: 10, padding: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, gap: 3 },
+  listTitle: { fontSize: 15, fontWeight: "500", color: C.text, fontFamily: MONO },
+  body: { fontSize: 13, color: C.text, lineHeight: 19, fontFamily: MONO },
+  sub: { fontSize: 11, color: C.sub, lineHeight: 16, letterSpacing: 0.4, fontFamily: MONO },
+  hint: { fontSize: 11, color: C.faint, lineHeight: 16, letterSpacing: 0.4, fontFamily: MONO },
+  label: { fontSize: 10, fontWeight: "500", color: C.sub, textTransform: "uppercase", letterSpacing: 1.2, marginTop: 8, fontFamily: MONO },
+  input: { backgroundColor: C.card, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: C.text, fontFamily: MONO },
+  titleInput: { fontSize: 18, fontWeight: "500", color: C.text, paddingVertical: 4, fontFamily: MONO },
+  primaryBtn: { backgroundColor: C.accent, borderRadius: 8, paddingVertical: 10, alignItems: "center", justifyContent: "center" },
+  primaryBtnT: { color: C.bg, fontSize: 13, fontWeight: "700", fontFamily: MONO },
   addBar: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
-  row: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
-  sep: { borderTopWidth: 1, borderTopColor: C.line },
-  check: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: C.faint, alignItems: "center", justifyContent: "center", marginTop: 1 },
-  fold: { fontSize: 14, color: C.accent, paddingVertical: 4 },
+  row: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingHorizontal: 12, paddingVertical: 11 },
+  sep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  check: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: C.sub, alignItems: "center", justifyContent: "center", marginTop: 0 },
+  fold: { fontSize: 12, color: C.accent, paddingVertical: 4, fontFamily: MONO },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
-  chip: { borderWidth: 1, borderColor: C.line, backgroundColor: C.card, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
-  chipT: { fontSize: 13, color: C.text },
-  bubble: { backgroundColor: C.card, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: C.line, maxWidth: "88%", alignSelf: "flex-start" },
-  bubbleMine: { alignSelf: "flex-end", backgroundColor: C.accentSoft, borderColor: C.accentSoft },
-  bubbleBot: { backgroundColor: "#EAF1F7", borderColor: "#EAF1F7" },
-  sheetBackdrop: { flex: 1, backgroundColor: "rgba(20,25,22,0.35)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 18, paddingBottom: 28, gap: 8 },
-  mdCode: { fontFamily: "monospace", backgroundColor: "#ECEEE9", fontSize: 13 },
+  chip: { borderWidth: 1, borderColor: C.line, backgroundColor: "transparent", borderRadius: 13, paddingHorizontal: 11, paddingVertical: 5 },
+  chipOn: { backgroundColor: C.raised, borderColor: C.accent },
+  chipT: { fontSize: 12, color: C.text, fontFamily: MONO },
+  helpPill: { borderWidth: 1, borderColor: C.violet, backgroundColor: "transparent", borderRadius: 13, paddingHorizontal: 11, paddingVertical: 5 },
+  helpPillOn: { backgroundColor: C.violet },
+  helpPillT: { fontSize: 12, color: C.violet, fontFamily: MONO },
+  bubble: { backgroundColor: C.card, borderRadius: 10, padding: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, maxWidth: "88%", alignSelf: "flex-start" },
+  bubbleMine: { alignSelf: "flex-end", backgroundColor: C.raised, borderColor: C.line },
+  bubbleBot: { backgroundColor: C.card, borderColor: C.violet, borderWidth: 1 },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  sheet: { backgroundColor: C.card, borderTopLeftRadius: 14, borderTopRightRadius: 14, padding: 18, paddingBottom: 28, gap: 8, borderTopWidth: StyleSheet.hairlineWidth, borderColor: C.line },
+  mdCode: { fontFamily: MONO, backgroundColor: C.raised, color: C.text, fontSize: 12 },
   mdLink: { color: C.blue, textDecorationLine: "underline" },
-  mdQuote: { borderLeftWidth: 3, borderLeftColor: C.line, paddingLeft: 10 },
-  mdPre: { backgroundColor: "#ECEEE9", borderRadius: 8, padding: 10 },
-  mdPreT: { fontFamily: "monospace", fontSize: 13, color: C.text },
-  bubbleWho: { fontSize: 11, color: C.sub, marginBottom: 2, fontWeight: "600" },
+  mdQuote: { borderLeftWidth: 2, borderLeftColor: C.line, paddingLeft: 10 },
+  mdPre: { backgroundColor: C.raised, borderRadius: 8, padding: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
+  mdPreT: { fontFamily: MONO, fontSize: 12, color: C.text },
+  bubbleWho: { fontSize: 10, color: C.sub, marginBottom: 3, fontWeight: "500", letterSpacing: 0.8, textTransform: "lowercase", fontFamily: MONO },
 });
