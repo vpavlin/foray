@@ -9,6 +9,7 @@ media, and cut to a length a small model can take.
 """
 
 import json
+import os
 import re
 import sys
 import urllib.parse
@@ -109,6 +110,9 @@ TOOLS = [
 
 
 def call(name, args):
+    if os.environ.get("FORAY_BROWSER_NOT_READY"):
+        raise RuntimeError("the browser is still being installed (a few minutes, the first time): "
+                           "try again later, or ask another agent meanwhile")
     if name == "web_search":
         return web_search(args.get("query", ""), args.get("region", "cz-cs"))
     if name == "read_page":

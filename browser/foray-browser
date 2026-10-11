@@ -1,18 +1,31 @@
 #!/usr/bin/env bash
 # The list's browser tools (foray_browser.py), run by pi in the session's
 # cage. Python and Camoufox live in the session's directory (.browser), which
-# outlives the cage, and are installed the first time — by setup.sh, with
-# --install, so a session never waits for a download.
+# outlives the cage. setup.sh installs them (--install); should they be
+# missing when pi starts this, the install runs in the background — pi does
+# not wait minutes for a server — and the tools say so until it is done.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 b="$here/.browser"
 export XDG_CACHE_HOME="$b/cache"
+install() {
+    mkdir -p "$b"
+    exec 9>"$b/.lock"
+    flock 9
+    [ -f "$b/ready" ] && return 0
+    rm -rf "$b/venv" "$b/cache"
+    python3 -m venv "$b/venv"
+    "$b/venv/bin/pip" install -q camoufox
+    "$b/venv/bin/python" -m camoufox fetch
+    touch "$b/ready"
+}
+if [ "${1:-}" = --install ]; then
+    install >&2
+    exit 0
+fi
 if [ ! -f "$b/ready" ]; then
     mkdir -p "$b"
-    python3 -m venv "$b/venv" >&2
-    "$b/venv/bin/pip" install -q camoufox >&2
-    "$b/venv/bin/python" -m camoufox fetch >&2
-    touch "$b/ready"
+    (install >"$b/install.log" 2>&1 &)
+    FORAY_BROWSER_NOT_READY=1 exec python3 -I "$here/browser/foray_browser.py"
 fi
-[ "${1:-}" = --install ] && exit 0
-exec "$b/venv/bin/python" "$here/browser/foray_browser.py"
+exec "$b/venv/bin/python" -I "$here/browser/foray_browser.py"
