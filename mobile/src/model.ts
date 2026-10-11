@@ -102,6 +102,7 @@ export function whoLabel(by: string | undefined, session: string | undefined, me
 }
 
 export const HELP_KINDS: { kind: string; label: string; hint: string }[] = [
+  { kind: "analyze", label: "Analyze", hint: "let the assistant work out what would help" },
   { kind: "find out", label: "Find out", hint: "e.g. which garages are open on Saturday" },
   { kind: "compare", label: "Compare", hint: "e.g. three options with prices" },
   { kind: "draft", label: "Draft", hint: "e.g. the email to the garage" },
