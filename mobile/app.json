@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Foray",
+    "slug": "foray",
+    "scheme": "foray",
+    "version": "0.1.0",
+    "platforms": ["android"],
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "xyz.vpavlin.foray",
+      "versionCode": 1,
+      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#3D7A57" },
+      "permissions": ["POST_NOTIFICATIONS"]
+    },
+    "plugins": [
+      "./plugins/withReleaseSigning",
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }],
+      ["expo-notifications", { "color": "#3D7A57" }],
+      "expo-background-task",
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}
