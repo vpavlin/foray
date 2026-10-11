@@ -14,7 +14,7 @@ import { api, ApiError } from "./src/api";
 import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
 import { registerBackground } from "./src/background";
-import { Item, ListInfo, ListContext, State, sections, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, HELP_KINDS, baseUrl } from "./src/model";
+import { Item, ListInfo, ListContext, State, sections, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, HELP_KINDS, baseUrl } from "./src/model";
 
 const C = {
   bg: "#F4F5F1", card: "#FFFFFF", text: "#1E2320", sub: "#67706A", faint: "#9AA29C", line: "#E2E5DF",
@@ -325,7 +325,9 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
             ].filter(Boolean);
             return bits.length ? <Text style={[s.sub, !done && (b === "overdue" || b === "today") && { color: C.warn }]} numberOfLines={1}>{bits.join(" · ")}</Text> : null;
           })()}
-          {asked && !done && <Text style={[s.sub, { color: C.blue }]} numberOfLines={1}>The assistant asked: {stripMarkdown(lastC!.text)}</Text>}
+          {asked && !done && (isQuestion(lastC!.text)
+            ? <Text style={[s.sub, { color: C.blue }]} numberOfLines={1}>The assistant asked: {stripMarkdown(lastC!.text)}</Text>
+            : <Text style={[s.sub, { color: C.faint }]} numberOfLines={1}>The assistant: {stripMarkdown(lastC!.text)}</Text>)}
           {!!(it.summary || "").trim() && !done && <Text style={s.sub} numberOfLines={1}>{previewLine(it.summary!)}</Text>}
         </View>
       </Pressable>
