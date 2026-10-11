@@ -3,7 +3,7 @@
 # user whose shrooms-agent runs the session. Safe to run again.
 #
 #   scripts/setup.sh --list home --mesh home --title Home \
-#       [--model venice/deepseek-v4-1-flash] [--suggest-from laptop/shrooms] [--no-session] [--no-cage]
+#       [--model venice/deepseek-v4-1-flash (the default for a new list; kept after)] [--suggest-from laptop/shrooms] [--no-session] [--no-cage]
 #
 # What it does:
 #   ~/.local/bin/foray                      the binary (built here if Go is present)
@@ -17,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-list="" mesh="" title="" model="venice/deepseek-v4-1-flash" suggest="" session=1 cage=1
+list="" mesh="" title="" model="" suggest="" session=1 cage=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --list) list=$2; shift 2 ;;
@@ -66,12 +66,21 @@ PY
 
 echo "==> the session's directory"
 cp session/AGENTS.md "$dir/AGENTS.md"
+# The list's model: as given, else what it has, else the default. Each list
+# keeps its own (home on one model, office on another); a run without
+# --model leaves it be.
+if [ -z "$model" ]; then
+    model=$(python3 -c "import json,sys; c=json.load(open(sys.argv[1])); print(c['defaultProvider']+'/'+c['defaultModel'])" "$dir/.pi/settings.json" 2>/dev/null || echo venice/deepseek-v4-1-flash)
+fi
 provider=${model%%/*}; mid=${model#*/}
 python3 - "$dir/.pi/settings.json" "$provider" "$mid" <<'PY'
-import json, sys
+import json, os, sys
 path, provider, model = sys.argv[1:]
-json.dump({"defaultProvider": provider, "defaultModel": model}, open(path, "w"), indent=2)
+c = json.load(open(path)) if os.path.exists(path) else {}
+c.update({"defaultProvider": provider, "defaultModel": model})
+json.dump(c, open(path, "w"), indent=2)
 PY
+echo "   model $model (a change reaches the session when it is made again: pi keeps a conversation's model)"
 # pi reads a folder's .pi/settings.json (the model above) only from folders
 # it trusts; in rpc mode it never asks, so the folder is trusted here. A
 # trusted folder can also bring pi extensions in .pi/ — the session runs in a
