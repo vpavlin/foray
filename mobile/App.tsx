@@ -15,7 +15,7 @@ import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
 import { registerBackground } from "./src/background";
 import { findAgents } from "./src/agents";
-import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, validAgent, trustProblems, Helper, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl } from "./src/model";
+import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, validAgent, trustProblems, Helper, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl, itemRef, parseForayLink } from "./src/model";
 
 // The Shrooms palette, dark like the Basecamp view and the Shrooms app. Colour carries meaning:
 // phosphor = primary / done, amber = overdue or needs attention, rust = errors, violet = the
@@ -93,17 +93,21 @@ function Main() {
   }, []);
 
   // foray://add?address=<overlay>[&port=N]: setting up by scanning a QR instead of typing.
+  // foray://item?address=…&list=…&id=…: an item's reference; adds its machine if this phone lacks it,
+  // then opens the list and the item.
   const onLink = useCallback(async (url: string | null) => {
-    if (!url || !url.startsWith("foray://add")) return;
-    const q = url.slice(url.indexOf("?") + 1).split("&").map((kv) => kv.split("=").map(decodeURIComponent));
-    const get = (k: string) => (q.find(([a]) => a === k) || [])[1] || "";
-    const address = get("address").trim();
-    if (!address) return;
-    const port = Number(get("port")) || 7389;
+    const l = parseForayLink(url);
+    if (!l) return;
     const ms = await store.machines();
-    if (!ms.some((m) => m.address === address && m.port === port)) await store.setMachines([...ms, { address, port }]);
-    toast("Added. Looking for lists…");
-    refresh();
+    const known = ms.some((m) => baseUrl(m.address, m.port) === baseUrl(l.address, l.port));
+    if (!known) await store.setMachines([...ms, { address: l.address, port: l.port }]);
+    if (l.kind === "add") { toast("Added. Looking for lists…"); refresh(); return; }
+    if (!known) toast("Added its machine. Opening…");
+    await refresh();
+    const { found: fs } = await findLists();
+    const f = fs.find((x) => x.base === baseUrl(l.address, l.port) && x.list.name === l.list);
+    if (!f) { toast("Couldn't reach that list. Is this phone on its mesh?"); return; }
+    setOpen({ base: f.base, list: f.list }); setOpenItem(l.id);
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -131,7 +135,7 @@ function Main() {
   }, [open]);
 
   if (machines === null) return <View style={{ flex: 1 }} />;
-  if (open) return <ListScreen base={open.base} info={open.list} initialItem={openItem} onBack={() => { setOpen(null); setOpenItem(null); refresh(); }} />;
+  if (open) return <ListScreen key={open.base + "|" + open.list.name + "|" + (openItem || "")} base={open.base} info={open.list} initialItem={openItem} onBack={() => { setOpen(null); setOpenItem(null); refresh(); }} />;
 
   const byMesh = new Map<string, Found[]>();
   for (const f of found) { const k = f.list.mesh; (byMesh.get(k) || byMesh.set(k, []).get(k)!).push(f); }
@@ -843,6 +847,10 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
             </View>
           )}
           <Text style={[s.hint, { marginTop: 8 }]}>Added by {whoLabel(item.added_by, list.session, me) || "someone"}{item.suggested_by ? `, suggested by ${whoLabel(item.suggested_by, list.session, me)}` : ""}.</Text>
+          <Pressable hitSlop={6} style={{ alignSelf: "flex-start", marginTop: 6 }}
+            onPress={() => { Clipboard.setStringAsync(itemRef(base, list, item)).then(() => toast("Reference copied. Give it to an agent, or open it on a phone")).catch(() => {}); }}>
+            <Text style={{ fontFamily: MONO, fontSize: 12, color: C.accent }}>Copy reference</Text>
+          </Pressable>
         </ScrollView>
     </View>
   );

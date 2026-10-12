@@ -239,3 +239,43 @@ export function baseUrl(address: string, port: number): string {
   const hp = /^(.+):(\d+)$/.exec(a);
   return hp ? `http://${hp[1]}:${hp[2]}` : `http://${a}:${port}`;
 }
+
+// ── an item's reference: to hand an item to an agent, or open it on a phone ───
+// The same text as the Basecamp view's itemRef, plus a foray://item link as a third line.
+const enc = (s: string) => (/^[0-9A-Za-z:.\-_]+$/.test(s) ? s : encodeURIComponent(s));
+export function hostOf(base: string): { address: string; port: number } | null {
+  const m = /^https?:\/\/(\[([^\]]+)\]|[^:/\[\]]+)(?::(\d+))?/.exec(base || "");
+  if (!m) return null;
+  return { address: m[2] || m[1], port: m[3] ? Number(m[3]) : 80 };
+}
+export function itemLink(address: string, port: number, list: string, id: string): string {
+  return `foray://item?address=${enc(address)}&list=${enc(list)}&id=${enc(id)}` + (port && port !== 7389 ? `&port=${port}` : "");
+}
+export function itemRef(base: string, list: { name: string; title: string }, item: { id: string; title: string }): string {
+  const h = hostOf(base);
+  const lines = [`Foray · ${list.title || list.name} · “${item.title}”`,
+    `${base.replace(/\/+$/, "")}/v1/lists/${encodeURIComponent(list.name)}/items/${encodeURIComponent(item.id)}`];
+  if (h) lines.push(itemLink(h.address, h.port, list.name, item.id));
+  return lines.join("\n");
+}
+
+export type ForayLink =
+  | { kind: "add"; address: string; port: number }
+  | { kind: "item"; address: string; port: number; list: string; id: string };
+/** foray://add?address=…[&port=N] and foray://item?address=…&list=…&id=…[&port=N]; anything else is null. */
+export function parseForayLink(url: string | null | undefined): ForayLink | null {
+  const m = /^foray:\/\/(add|item)\/?(?:\?(.*))?$/.exec((url || "").trim());
+  if (!m) return null;
+  const q = new Map<string, string>();
+  for (const kv of (m[2] || "").split("&")) {
+    const i = kv.indexOf("=");
+    if (i <= 0) continue;
+    try { q.set(kv.slice(0, i), decodeURIComponent(kv.slice(i + 1).replace(/\+/g, " "))); } catch { /* a malformed escape: skip it */ }
+  }
+  const address = (q.get("address") || "").trim().replace(/^\[|\]$/g, "");
+  if (!address) return null;
+  const port = Number(q.get("port")) || 7389;
+  if (m[1] === "add") return { kind: "add", address, port };
+  const list = (q.get("list") || "").trim(), id = (q.get("id") || "").trim();
+  return list && id ? { kind: "item", address, port, list, id } : null;
+}
