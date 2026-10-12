@@ -848,7 +848,7 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
           )}
           <Text style={[s.hint, { marginTop: 8 }]}>Added by {whoLabel(item.added_by, list.session, me) || "someone"}{item.suggested_by ? `, suggested by ${whoLabel(item.suggested_by, list.session, me)}` : ""}.</Text>
           <Pressable hitSlop={6} style={{ alignSelf: "flex-start", marginTop: 6 }}
-            onPress={() => { Clipboard.setStringAsync(itemRef(base, list, item)).then(() => toast("Reference copied. Give it to an agent, or open it on a phone")).catch(() => {}); }}>
+            onPress={() => { Clipboard.setStringAsync(itemRef(base, list, item)).then(() => toast("Reference copied. Give it to an agent")).catch(() => {}); }}>
             <Text style={{ fontFamily: MONO, fontSize: 12, color: C.accent }}>Copy reference</Text>
           </Pressable>
         </ScrollView>

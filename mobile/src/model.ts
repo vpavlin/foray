@@ -241,7 +241,9 @@ export function baseUrl(address: string, port: number): string {
 }
 
 // ── an item's reference: to hand an item to an agent, or open it on a phone ───
-// The same text as the Basecamp view's itemRef, plus a foray://item link as a third line.
+// What "Copy reference" copies: the item's own address, as the Basecamp view's itemRef. GETting it
+// gives an agent the item, its list and how to change it. (foray://item links open an item on a
+// phone, from a QR or another app; they aren't part of the copy.)
 const enc = (s: string) => (/^[0-9A-Za-z:.\-_]+$/.test(s) ? s : encodeURIComponent(s));
 export function hostOf(base: string): { address: string; port: number } | null {
   const m = /^https?:\/\/(\[([^\]]+)\]|[^:/\[\]]+)(?::(\d+))?/.exec(base || "");
@@ -251,12 +253,8 @@ export function hostOf(base: string): { address: string; port: number } | null {
 export function itemLink(address: string, port: number, list: string, id: string): string {
   return `foray://item?address=${enc(address)}&list=${enc(list)}&id=${enc(id)}` + (port && port !== 7389 ? `&port=${port}` : "");
 }
-export function itemRef(base: string, list: { name: string; title: string }, item: { id: string; title: string }): string {
-  const h = hostOf(base);
-  const lines = [`Foray · ${list.title || list.name} · “${item.title}”`,
-    `${base.replace(/\/+$/, "")}/v1/lists/${encodeURIComponent(list.name)}/items/${encodeURIComponent(item.id)}`];
-  if (h) lines.push(itemLink(h.address, h.port, list.name, item.id));
-  return lines.join("\n");
+export function itemRef(base: string, list: { name: string }, item: { id: string }): string {
+  return `${base.replace(/\/+$/, "")}/v1/lists/${encodeURIComponent(list.name)}/items/${encodeURIComponent(item.id)}`;
 }
 
 export type ForayLink =

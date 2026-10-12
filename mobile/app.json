@@ -3,7 +3,7 @@
     "name": "Foray",
     "slug": "foray",
     "scheme": "foray",
-    "version": "0.1.12",
+    "version": "0.1.13",
     "platforms": [
       "android"
     ],
@@ -11,7 +11,7 @@
     "userInterfaceStyle": "dark",
     "android": {
       "package": "xyz.vpavlin.foray",
-      "versionCode": 13,
+      "versionCode": 14,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0b0d0f"
