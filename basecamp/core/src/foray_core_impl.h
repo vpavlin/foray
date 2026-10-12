@@ -42,6 +42,13 @@ public:
     std::string send(const std::string& address, const std::string& method,
                      const std::string& path, const std::string& body);
 
+    /**
+     * @brief Opens an http(s) link in the desktop's browser: {"ok":true} or
+     * {"error"}. A view cannot: Basecamp's sandbox turns Qt.openUrlExternally
+     * of a remote address into nothing.
+     */
+    std::string openUrl(const std::string& url);
+
     /** @brief A small view preference, kept beside Basecamp's own. "" when unset. */
     std::string getPref(const std::string& key);
     std::string setPref(const std::string& key, const std::string& value);

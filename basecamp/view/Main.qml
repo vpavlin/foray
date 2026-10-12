@@ -210,9 +210,19 @@ Item {
     // Who a help request goes to: "" leaves it to the assistant.
     property string helpTo: ""
 
+    // Through foray_core: Basecamp's sandbox stops a view opening a remote
+    // address itself. Should that fail too, the link is copied instead.
     function openLink(link) {
-        if (/^https?:\/\//.test(link)) Qt.openUrlExternally(link)
+        if (!/^https?:\/\//.test(link)) return
+        var r = call("foray_core", "openUrl", [link])
+        if (r && !r.error) { root.said = ""; return }
+        copyText(link)
+        root.said = "could not open the link — copied it: " + link
     }
+    function copyText(t) {
+        clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = ""
+    }
+    TextEdit { id: clipHelper; visible: false }
 
     // Read-only, selectable and copyable — a draft is for pasting.
     component MdText: TextArea {
@@ -224,6 +234,12 @@ Item {
         padding: 0; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
         background: null
         onLinkActivated: (link) => root.openLink(link)
+        // A hand over a link, as anywhere else links are.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.NoButton
+            cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor
+        }
     }
 
     function itemById(id) {
