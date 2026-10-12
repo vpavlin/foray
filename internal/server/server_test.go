@@ -379,3 +379,20 @@ func TestHelpersAreTrustedAndAskedByName(t *testing.T) {
 		t.Fatalf("the session was told: %v", told)
 	}
 }
+
+// An item by its own address: what an agent is handed to work on it.
+func TestAnItemHasItsOwnAddress(t *testing.T) {
+	f := newFixture(t)
+	_, it := f.call(t, f.home, "POST", "/v1/lists/home/items", store.New{Title: "Demo recordings"}, nil)
+	id := it["id"].(string)
+	code, got := f.call(t, f.home, "GET", "/v1/lists/home/items/"+id, nil, nil)
+	if code != 200 || got["title"] != "Demo recordings" || got["api"] == nil || got["list"].(map[string]any)["name"] != "home" {
+		t.Fatalf("get: %d %v", code, got)
+	}
+	if code, _ := f.call(t, f.home, "GET", "/v1/lists/home/items/nope", nil, nil); code != 404 {
+		t.Fatalf("a missing item: %d", code)
+	}
+	if code, _ := f.call(t, f.office, "GET", "/v1/lists/home/items/"+id, nil, nil); code != 404 {
+		t.Fatalf("another mesh read the item: %d", code)
+	}
+}

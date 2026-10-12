@@ -158,6 +158,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/lists/{list}/context", s.withList(s.getContext))
 	mux.HandleFunc("PUT /v1/lists/{list}/context", s.withWriter(s.setContext))
 	mux.HandleFunc("POST /v1/lists/{list}/items", s.withWriter(s.add))
+	mux.HandleFunc("GET /v1/lists/{list}/items/{id}", s.withList(s.getItem))
 	mux.HandleFunc("PATCH /v1/lists/{list}/items/{id}", s.withWriter(s.update))
 	mux.HandleFunc("POST /v1/lists/{list}/items/{id}/comments", s.withWriter(s.comment))
 	mux.HandleFunc("POST /v1/lists/{list}/items/{id}/ask", s.withWriter(s.ask))
@@ -251,6 +252,27 @@ func (s *Server) getList(w http.ResponseWriter, r *http.Request, l *list, _ stri
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"list": info(l), "items": l.store.Items(states...),
 		"asks": asks, "suggest_from": allowed, "context": l.store.Context()})
+}
+
+// getItem is one item, with how to change it: what an agent handed an
+// item's address (the app's "copy reference") needs to work on it.
+func (s *Server) getItem(w http.ResponseWriter, r *http.Request, l *list, _ string) {
+	it, ok := l.store.Get(r.PathValue("id"))
+	if !ok {
+		fail(w, http.StatusNotFound, fmt.Errorf("no item %q", r.PathValue("id")))
+		return
+	}
+	out := map[string]any{}
+	b, _ := json.Marshal(it)
+	json.Unmarshal(b, &out)
+	out["list"] = info(l)
+	out["api"] = map[string]string{
+		"read":    "GET this address",
+		"update":  `PATCH this address, JSON with any of: title, notes, summary (markdown), state (open, waiting, done, dropped), due (2026-10-20), who, tags`,
+		"comment": `POST this address + "/comments", {"text": "..."}`,
+		"note":    "Changes are recorded as your machine's. The summary is the item's current state in markdown: rewrite it whole, and keep what people wrote.",
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) getContext(w http.ResponseWriter, r *http.Request, l *list, _ string) {

@@ -219,6 +219,14 @@ Item {
         copyText(link)
         root.said = "could not open the link — copied it: " + link
     }
+    // An item's reference for an agent: its address on the mesh, which any
+    // device there can read and change (GET it for how).
+    function itemRef(it) {
+        var a = String(current.address)
+        var host = a.indexOf(":") >= 0 ? "[" + a + "]" : a
+        return "Foray · " + current.title + " · “" + it.title + "”\n"
+            + "http://" + host + ":7389/v1/lists/" + encodeURIComponent(current.name) + "/items/" + it.id
+    }
     function copyText(t) {
         clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = ""
     }
@@ -645,10 +653,19 @@ Item {
                         color: cBone; font.pixelSize: 19; wrapMode: TextInput.Wrap
                         onEditingFinished: if (text.trim() !== "" && text !== detail.it.title) root.write("PATCH", "/items/" + detail.it.id, { title: text })
                     }
-                    Text {
-                        text: "added by " + root.byText(detail.it.added_by)
-                              + (detail.it.suggested_by ? " · suggested by " + detail.it.suggested_by : "")
-                        color: cAsh; font.pixelSize: 11
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "added by " + root.byText(detail.it.added_by)
+                                  + (detail.it.suggested_by ? " · suggested by " + detail.it.suggested_by : "")
+                            color: cAsh; font.pixelSize: 11
+                        }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            text: "copy reference"; color: cSky; font.pixelSize: 11
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                        onClicked: { root.copyText(root.itemRef(detail.it)); root.said = "copied a reference to “" + detail.it.title + "” — give it to an agent" } }
+                        }
                     }
 
                     // The summary: what is known, kept by the assistant,

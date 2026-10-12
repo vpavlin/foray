@@ -70,6 +70,12 @@ reads it with `get_context` and gets a 403 if it tries to write it. It is
 also in `GET /v1/lists/{list}` as `context`. A change to it moves the list's
 `seq` but is not one of the `changes`: those are items.
 
+### `GET /v1/lists/{list}/items/{id}`
+One item, with `list` (the list's info) and `api` (how to read, update and
+comment on it, in words). This is what "copy reference" in the apps hands
+over: `http://[address]:7389/v1/lists/{list}/items/{id}`, so an agent given it
+can read the item and change it — as its machine, from the list's mesh.
+
 ### `GET /v1/lists/{list}/pair`
 What a phone scans to find the list: `{"link": "foray://add?address=fd…&list=home",
 "address": "fd…", "qr": ["1110…", …]}` — the QR as rows of 0 and 1 for the app
