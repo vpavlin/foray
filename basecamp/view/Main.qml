@@ -225,7 +225,9 @@ Item {
         var a = String(current.address)
         var host = a.indexOf(":") >= 0 ? "[" + a + "]" : a
         return "Foray · " + current.title + " · “" + it.title + "”\n"
-            + "http://" + host + ":7389/v1/lists/" + encodeURIComponent(current.name) + "/items/" + it.id
+            + "http://" + host + ":7389/v1/lists/" + encodeURIComponent(current.name) + "/items/" + it.id + "\n"
+            // The same item in the phone app.
+            + "foray://item?address=" + encodeURIComponent(a) + "&list=" + encodeURIComponent(current.name) + "&id=" + encodeURIComponent(it.id)
     }
     function copyText(t) {
         clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = ""
