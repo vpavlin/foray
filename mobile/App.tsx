@@ -527,20 +527,23 @@ function inlineNodes(xs: Inline[], key = ""): React.ReactNode[] {
     }
   });
 }
+// On Android a selectable Text swallows the taps of the links inside it, so text with a link isn't
+// selectable (Copy still copies all of it).
+const hasLink = (xs: Inline[]): boolean => xs.some((x) => x.t === "link" || ((x.t === "b" || x.t === "i") && hasLink(x.c)));
 function Markdown({ text }: { text: string }) {
   const blocks = useMemo(() => parseMarkdown(text), [text]);
   const one = (b: Block, i: number) => {
     switch (b.t) {
-      case "p": return <Text key={i} style={s.body} selectable>{inlineNodes(b.c)}</Text>;
-      case "h": return <Text key={i} style={[s.body, { fontWeight: "700", fontSize: b.level <= 1 ? 18 : b.level === 2 ? 16 : 15 }]} selectable>{inlineNodes(b.c)}</Text>;
-      case "quote": return <View key={i} style={s.mdQuote}><Text style={[s.body, { color: C.sub }]} selectable>{inlineNodes(b.c)}</Text></View>;
+      case "p": return <Text key={i} style={s.body} selectable={!hasLink(b.c)}>{inlineNodes(b.c)}</Text>;
+      case "h": return <Text key={i} style={[s.body, { fontWeight: "700", fontSize: b.level <= 1 ? 18 : b.level === 2 ? 16 : 15 }]} selectable={!hasLink(b.c)}>{inlineNodes(b.c)}</Text>;
+      case "quote": return <View key={i} style={s.mdQuote}><Text style={[s.body, { color: C.sub }]} selectable={!hasLink(b.c)}>{inlineNodes(b.c)}</Text></View>;
       case "code": return <View key={i} style={s.mdPre}><Text style={s.mdPreT} selectable>{b.s}</Text></View>;
       case "ul": case "ol": return (
         <View key={i} style={{ gap: 3 }}>
           {b.items.map((it, j) => (
             <View key={j} style={{ flexDirection: "row", gap: 6 }}>
               <Text style={[s.body, { minWidth: b.t === "ol" ? 20 : 10 }]}>{b.t === "ol" ? `${b.start + j}.` : "•"}</Text>
-              <Text style={[s.body, { flex: 1 }]} selectable>{inlineNodes(it)}</Text>
+              <Text style={[s.body, { flex: 1 }]} selectable={!hasLink(it)}>{inlineNodes(it)}</Text>
             </View>
           ))}
         </View>
