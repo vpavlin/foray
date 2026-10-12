@@ -43,7 +43,8 @@ public:
                      const std::string& path, const std::string& body);
 
     /**
-     * @brief Opens an http(s) link in the desktop's browser: {"ok":true} or
+     * @brief Opens an http(s) link in the desktop's browser, or a basecamp://
+     * link through Basecamp's handler: {"ok":true} or
      * {"error"}. A view cannot: Basecamp's sandbox turns Qt.openUrlExternally
      * of a remote address into nothing.
      */

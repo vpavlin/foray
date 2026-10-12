@@ -150,22 +150,34 @@ Item {
     // MarkdownText, which colours links from the application palette
     // (unreadable here) and would fetch images from wherever they point:
     // comments and answers come from models and other agents. Images become
-    // their alt text, raw HTML shows as text, and only http(s) links are links.
+    // their alt text, raw HTML shows as text, and only http(s) and basecamp://
+    // links are links.
     function mdToHtml(src, linkColor) {
         function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") }
+        // Links become placeholders before emphasis, so a "_" or "__" in an
+        // address (base64url is full of them) is never read as italics or bold
+        // inside it; put back last.
         function inline(t) {
-            var codes = []
+            var codes = [], links = []
             t = t.replace(/`([^`]+)`/g, function (m, c) { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000" })
             t = esc(t)
             t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-            t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, function (m, label, href) {
-                return '<a href="' + href + '"><span style="color:' + linkColor + '">' + label + '</span></a>' })
-            t = t.replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,;:!?])/g, function (m, pre, href) {
-                return pre + '<a href="' + href + '"><span style="color:' + linkColor + '">' + href + '</span></a>' })
+            function link(href, label) {
+                links.push('<a href="' + href + '"><span style="color:' + linkColor + '">' + label + '</span></a>')
+                return "\u0001" + (links.length - 1) + "\u0001"
+            }
+            // http(s), and basecamp:// — Basecamp's own links, which go through
+            // its chooser and consent (an app's intent, or an app).
+            t = t.replace(/\[([^\]]+)\]\(((?:https?|basecamp):\/\/[^)\s]+)\)/g, function (m, label, href) { return link(href, label) })
+            t = t.replace(/(^|[\s(])((?:https?|basecamp):\/\/[^\s<)]*[^\s<).,;:!?])/g, function (m, pre, href) {
+                var bc = href.match(/^basecamp:\/\/(intent|app)\/([\w.-]+)/)
+                return pre + link(href, bc ? "Basecamp: " + bc[2] : href)
+            })
             t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/__([^_]+)__/g, "<b>$1</b>")
             t = t.replace(/(^|[^\w*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>").replace(/(^|\W)_([^_\s][^_]*)_(?=\W|$)/g, "$1<i>$2</i>")
             t = t.replace(/~~([^~]+)~~/g, "<s>$1</s>")
-            return t.replace(/\u0000(\d+)\u0000/g, function (m, i) { return "<code>" + esc(codes[+i]) + "</code>" })
+            t = t.replace(/\u0000(\d+)\u0000/g, function (m, i) { return "<code>" + esc(codes[+i]) + "</code>" })
+            return t.replace(/\u0001(\d+)\u0001/g, function (m, i) { return links[+i] })
         }
         var lines = (src || "").replace(/\r/g, "").split("\n"), out = [], para = [], list = null, code = null
         function flushPara() { if (para.length) { out.push("<p>" + para.map(inline).join("<br>") + "</p>"); para = [] } }
@@ -213,7 +225,7 @@ Item {
     // Through foray_core: Basecamp's sandbox stops a view opening a remote
     // address itself. Should that fail too, the link is copied instead.
     function openLink(link) {
-        if (!/^https?:\/\//.test(link)) return
+        if (!/^(https?|basecamp):\/\//.test(link)) return
         var r = call("foray_core", "openUrl", [link])
         if (r && !r.error) { root.said = ""; return }
         copyText(link)

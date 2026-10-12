@@ -354,7 +354,9 @@ std::vector<std::string> childEnv()
 
 bool safeUrl(const std::string& url)
 {
-    if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) return false;
+    // http(s), and basecamp:// — Basecamp's own links, which its registered
+    // handler takes through its chooser and consent.
+    if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0 && url.rfind("basecamp://", 0) != 0) return false;
     if (url.size() > 4096) return false;
     for (unsigned char c : url)
         if (c <= 0x20 || c == 0x7f) return false;
@@ -365,7 +367,7 @@ bool safeUrl(const std::string& url)
 
 std::string ForayCoreImpl::openUrl(const std::string& url)
 {
-    if (!safeUrl(url)) return errorJson("only http and https links are opened");
+    if (!safeUrl(url)) return errorJson("only http, https and basecamp:// links are opened");
 #ifdef __APPLE__
     std::string bin = "open";
 #else

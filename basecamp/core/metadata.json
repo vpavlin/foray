@@ -1,7 +1,7 @@
 {
   "name": "foray_core",
   "display_name": "Foray Core",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "core",
   "interface": "universal",
   "category": "productivity",
