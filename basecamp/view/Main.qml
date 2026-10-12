@@ -219,15 +219,12 @@ Item {
         copyText(link)
         root.said = "could not open the link — copied it: " + link
     }
-    // An item's reference for an agent: its address on the mesh, which any
-    // device there can read and change (GET it for how).
+    // An item's reference for an agent: one line, its address on the mesh.
+    // GET it and the agent has the item, its title and how to change it.
     function itemRef(it) {
         var a = String(current.address)
         var host = a.indexOf(":") >= 0 ? "[" + a + "]" : a
-        return "Foray · " + current.title + " · “" + it.title + "”\n"
-            + "http://" + host + ":7389/v1/lists/" + encodeURIComponent(current.name) + "/items/" + it.id + "\n"
-            // The same item in the phone app.
-            + "foray://item?address=" + encodeURIComponent(a) + "&list=" + encodeURIComponent(current.name) + "&id=" + encodeURIComponent(it.id)
+        return "http://" + host + ":7389/v1/lists/" + encodeURIComponent(current.name) + "/items/" + it.id
     }
     function copyText(t) {
         clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = ""
