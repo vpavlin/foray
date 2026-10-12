@@ -10,7 +10,7 @@
 #   ~/.config/foray/config.json             the list, added or updated
 #   ~/foray-<list>/                         the session's directory: AGENTS.md, .pi/settings.json,
 #                                           bin/foray (for a cage), and the list's socket
-#   ~/.pi/agent/mcp.json                    a "foray" entry (only the list's session may use it)
+#   ~/foray-<list>/.pi/mcp.json             the list's tools and its browser, for its session only
 #   ~/.config/systemd/user/foray.service    the service, enabled and (re)started
 #   the session foray-<list>, created on this machine's shrooms-agent, limited to the list's mesh,
 #                                           in a cage when podman is here
@@ -115,18 +115,25 @@ json.dump(c, open(path, "w"), indent=2)
 PY2
 
 echo "==> the session's tools (pi)"
-python3 - "$HOME/.pi/agent/mcp.json" "$dir/bin/foray" "$list" "$dir/.foray.sock" <<'PY'
+# In the session's project config (.pi/mcp.json), beside its browser: only
+# this session loads them. In pi's global config every pi session on the
+# machine would start them, and be offered tools that refuse it. An entry
+# left there by an older setup is taken out.
+python3 - "$dir/.pi/mcp.json" "$HOME/.pi/agent/mcp.json" "$dir/bin/foray" "$list" "$dir/.foray.sock" <<'PY'
 import json, os, sys
-path, binp, lst, sock = sys.argv[1:]
-c = json.load(open(path)) if os.path.exists(path) else {"mcpServers": {}}
+proj, glob, binp, lst, sock = sys.argv[1:]
+c = json.load(open(proj)) if os.path.exists(proj) else {}
 c.setdefault("mcpServers", {})["foray-" + lst] = {
     "command": binp, "args": ["mcp", "--list", lst, "--socket", sock],
     # Direct: its tools are ordinary tools, which a small model uses best
     # (pi 1.x would otherwise reach them through codemode or a search).
     "exposure": "direct",
-    "description": "The household's Foray list: only its own session may use these tools."}
-os.makedirs(os.path.dirname(path), exist_ok=True)
-json.dump(c, open(path, "w"), indent=2)
+    "description": "This list: only its own session may use these tools."}
+json.dump(c, open(proj, "w"), indent=2)
+if os.path.exists(glob):
+    g = json.load(open(glob))
+    if g.get("mcpServers", {}).pop("foray-" + lst, None) is not None:
+        json.dump(g, open(glob, "w"), indent=2)
 PY
 
 echo "==> the service"
