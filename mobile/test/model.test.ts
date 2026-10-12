@@ -121,3 +121,22 @@ assert.deepEqual(trustProblems(undefined), []);
 assert.equal(agentBase("http://[fdb0::1]:7389"), "http://[fdb0::1]:7387");
 
 console.log("MODEL OK");
+
+// ── item references and links ──
+{
+  const M = await import("../src/model.ts");
+  const base = M.baseUrl("fd00:1::5", 7389);
+  const ref = M.itemRef(base, { name: "office", title: "Office" }, { id: "a1b2", title: "Buy milk" });
+  const lines = ref.split("\n");
+  assert.equal(lines[0], "Foray · Office · “Buy milk”");
+  assert.equal(lines[1], "http://[fd00:1::5]:7389/v1/lists/office/items/a1b2");
+  assert.equal(lines[2], "foray://item?address=fd00:1::5&list=office&id=a1b2");
+  assert.deepEqual(M.parseForayLink(lines[2]), { kind: "item", address: "fd00:1::5", port: 7389, list: "office", id: "a1b2" });
+  const v4 = M.itemRef(M.baseUrl("10.0.0.2", 8000), { name: "home list", title: "" }, { id: "x", title: "T" }).split("\n");
+  assert.equal(v4[1], "http://10.0.0.2:8000/v1/lists/home%20list/items/x");
+  assert.deepEqual(M.parseForayLink(v4[2]), { kind: "item", address: "10.0.0.2", port: 8000, list: "home list", id: "x" });
+  assert.deepEqual(M.parseForayLink("foray://add?address=fd00::1&port=7390"), { kind: "add", address: "fd00::1", port: 7390 });
+  assert.equal(M.parseForayLink("foray://item?address=fd00::1&list=x"), null);
+  assert.equal(M.parseForayLink("https://example.com"), null);
+  assert.equal(M.parseForayLink("foray://add?address=%E0%A4%A"), null);
+}
