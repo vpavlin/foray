@@ -3,7 +3,7 @@
 # user whose shrooms-agent runs the session. Safe to run again.
 #
 #   scripts/setup.sh --list home --mesh home --title Home \
-#       [--model venice/deepseek-v4-1-flash (the default for a new list; kept after)] [--suggest-from laptop/shrooms] [--no-session] [--no-cage]
+#       [--model venice/deepseek-v4-1-flash (the default for a new list; kept after)] [--suggest-from laptop/shrooms] [--region cz-cs] [--no-session] [--no-cage]
 #
 # What it does:
 #   ~/.local/bin/foray                      the binary (built here if Go is present)
@@ -14,10 +14,14 @@
 #   ~/.config/systemd/user/foray.service    the service, enabled and (re)started
 #   the session foray-<list>, created on this machine's shrooms-agent, limited to the list's mesh,
 #                                           in a cage when podman is here
+#
+# --region is the browser's search region when the session gives none: a
+# DuckDuckGo kl code (cz-cs, de-de, us-en; wt-wt for none). The session picks
+# one from the list's context anyway; this is the fallback, kept after.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-list="" mesh="" title="" model="" suggest="" session=1 cage=1
+list="" mesh="" title="" model="" suggest="" region="" session=1 cage=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --list) list=$2; shift 2 ;;
@@ -25,12 +29,14 @@ while [ $# -gt 0 ]; do
         --title) title=$2; shift 2 ;;
         --model) model=$2; shift 2 ;;
         --suggest-from) suggest=$2; shift 2 ;;
+        --region) region=$2; shift 2 ;;
         --no-session) session=0; shift ;;
         --no-cage) cage=0; shift ;;
         *) echo "unknown: $1" >&2; exit 2 ;;
     esac
 done
 [ -n "$list" ] && [ -n "$mesh" ] || { echo "usage: $0 --list NAME --mesh LABEL [--title T]" >&2; exit 2; }
+[ -z "$region" ] || [[ "$region" =~ ^[a-z]{2}-[a-z]{2}$ ]] || { echo "--region $region: a DuckDuckGo region, like cz-cs or us-en" >&2; exit 2; }
 title=${title:-$list}
 name="foray-$list"
 dir="$HOME/$name"
@@ -104,14 +110,22 @@ echo "==> the session's browser"
 mkdir -p "$dir/browser"
 cp browser/foray_browser.py "$dir/browser/"
 cp browser/foray-browser "$dir/bin/.foray-browser.new" && mv -f "$dir/bin/.foray-browser.new" "$dir/bin/foray-browser"
-python3 - "$dir/.pi/mcp.json" "$dir/bin/foray-browser" <<'PY2'
-import json, os, sys
-path, binp = sys.argv[1:]
+python3 - "$dir/.pi/mcp.json" "$dir/bin/foray-browser" "$region" <<'PY2'
+import json, os, re, sys
+path, binp, region = sys.argv[1:]
 c = json.load(open(path)) if os.path.exists(path) else {}
-c.setdefault("mcpServers", {})["foray-browser"] = {
-    "command": binp, "exposure": "direct",
-    "description": "A browser for the list's session: web_search, read_page."}
+old = c.get("mcpServers", {}).get("foray-browser", {}).get("args", [])
+if not region and old[:1] == ["--region"]:
+    region = old[1]
+if region and not re.fullmatch(r"[a-z]{2}-[a-z]{2}", region):
+    sys.exit(f"--region {region}: a DuckDuckGo region, like cz-cs or us-en")
+entry = {"command": binp, "exposure": "direct",
+         "description": "A browser for the list's session: web_search, read_page."}
+if region:
+    entry["args"] = ["--region", region]
+c.setdefault("mcpServers", {})["foray-browser"] = entry
 json.dump(c, open(path, "w"), indent=2)
+print("   search region " + (region or "wt-wt (none) unless the session gives one"))
 PY2
 
 echo "==> the session's tools (pi)"

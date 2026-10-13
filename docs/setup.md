@@ -52,7 +52,14 @@ gives pi the list's tools, and creates the `foray-home` session limited to the
 list's mesh. Run it again any time; it changes only what differs.
 
 The other flags: `--model PROVIDER/MODEL`, `--suggest-from MACHINE/SESSION`
-(agents that may suggest items; comma-separated), `--no-session`, `--no-cage`.
+(agents that may suggest items; comma-separated), `--region`, `--no-session`,
+`--no-cage`.
+
+`--region` is where the session's browser searches when the session does not
+say: a DuckDuckGo region code, the country and then its language (`cz-cs`,
+`de-de`, `us-en`; `wt-wt` for none, the default). The session picks one
+from the list's context ("about us") for each search, so this is only the
+fallback. A run without it keeps the one set before.
 
 ## More lists
 

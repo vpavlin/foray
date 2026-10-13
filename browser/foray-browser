@@ -4,6 +4,7 @@
 # outlives the cage. setup.sh installs them (--install); should they be
 # missing when pi starts this, the install runs in the background — pi does
 # not wait minutes for a server — and the tools say so until it is done.
+# Other arguments (--region, from the session's .pi/mcp.json) go to the server.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 b="$here/.browser"
@@ -26,6 +27,6 @@ fi
 if [ ! -f "$b/ready" ]; then
     mkdir -p "$b"
     (install >"$b/install.log" 2>&1 &)
-    FORAY_BROWSER_NOT_READY=1 exec python3 -I "$here/browser/foray_browser.py"
+    FORAY_BROWSER_NOT_READY=1 exec python3 -I "$here/browser/foray_browser.py" "$@"
 fi
-exec "$b/venv/bin/python" -I "$here/browser/foray_browser.py"
+exec "$b/venv/bin/python" -I "$here/browser/foray_browser.py" "$@"
