@@ -60,9 +60,9 @@ assert.deepEqual(notesFromChanges({ ...list, session: "" }, ev.slice(0, 1), new 
 const due = dueTodayNotes(list, [it("a", "open", { due: "2026-10-11" }), it("b", "done", { due: "2026-10-11" }), it("c", "open", { due: "2026-10-09" }), it("d", "open", { due: "2026-10-12" })], now, new Set());
 assert.deepEqual(due.map((n) => [n.item, n.title]), [["a", "Due today"], ["c", "Overdue"]]);
 
-assert.equal(baseUrl("fdb0:9afc::1", 7389), "http://[fdb0:9afc::1]:7389");
-assert.equal(baseUrl("[fdb0::1]:7390", 7389), "http://[fdb0::1]:7390");
-assert.equal(baseUrl("jimmy-crib.office.mesh", 7389), "http://jimmy-crib.office.mesh:7389");
+assert.equal(baseUrl("fd00:1::5", 7389), "http://[fd00:1::5]:7389");
+assert.equal(baseUrl("[fd00::1]:7390", 7389), "http://[fd00::1]:7390");
+assert.equal(baseUrl("server.home.mesh", 7389), "http://server.home.mesh:7389");
 assert.equal(baseUrl("http://10.0.0.2:8000/", 7389), "http://10.0.0.2:8000");
 
 assert.equal(hasContext(null), false);
