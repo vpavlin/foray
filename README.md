@@ -32,8 +32,8 @@ cannot see it at all.
   anything worth knowing, and the helpers — so answers fit them.
 - **Needs you**: the assistant's open questions come first; sort and group
   by due date, tag or person.
-- **Several lists** per machine (home, office), each on its own mesh, with
-  its own assistant and model.
+- **Several lists** per machine (home, office), each on one mesh, with its
+  own assistant and model.
 - **References**: every item has an address on the mesh
   (`/v1/lists/{list}/items/{id}`) an agent can be handed to read and change it.
 
@@ -43,12 +43,18 @@ or sends anything: it prepares, a person acts.
 
 ## Running it
 
-[docs/setup.md](docs/setup.md): a machine on a Shrooms mesh with
-[Shrooms Agents](https://shrooms.vpavlin.xyz/agents-start.html), then
+You need a [Shrooms](https://github.com/vpavlin/shrooms) mesh, and on it a
+Linux machine (systemd) that is always on, with
+[Shrooms Agents](https://shrooms.vpavlin.xyz/agents-start.html), pi with a
+model provider, Go, `python3` and `curl`; podman for the assistant's cage is
+recommended. Then, from a checkout on that machine:
 
 ```
 scripts/setup.sh --list home --mesh home --title Home
 ```
+
+`--mesh` is the machine's label for the mesh. The details, and the apps, are
+in [docs/setup.md](docs/setup.md).
 
 The API is in [docs/api.md](docs/api.md), the design and its reasons in
 [docs/design.md](docs/design.md).
@@ -57,7 +63,8 @@ The API is in [docs/api.md](docs/api.md), the design and its reasons in
 
 Young, and used daily by its author for a home list and an office list. The
 Basecamp modules and the Android app are published to the author's own
-repositories, not yet to public ones.
+repositories, not yet to public ones: build them from `basecamp/` and
+`mobile/`.
 
 ## License
 

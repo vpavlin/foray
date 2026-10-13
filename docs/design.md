@@ -26,7 +26,7 @@ A2A tasks for asking agents, and Scala for the calendar.
 |---|---|
 | **foray service** | A small Go daemon on one machine: holds the lists, serves them on the machine's mesh addresses. The data. |
 | **Foray session** | One shrooms-agent session per list (`foray-home`), with the list's tools. The assistant. |
-| **foray MCP** | `foray mcp --list home`: the tools the session works the list with, wired into the session by its own `.mcp.json`. |
+| **foray MCP** | `foray mcp --list home`: the tools the session works the list with, wired into the session by its own `.pi/mcp.json`. |
 | **Foray apps** | A Basecamp module (view + core) and an Android app. Find every list on every mesh the device is on. |
 | **Scala bridge** | Phase 2: timed items as events in a calendar the household shares; free/busy read back. |
 
@@ -71,19 +71,20 @@ A normal shrooms-agent session, created once per list:
   and nothing else of that machine. This matters: **anyone who can see a
   session can drive it**, and the home mesh has people on it who are not you.
 - **In a cage**, not sealed: it needs the list and the mesh, not anybody's
-  home directory. Its tools reach the foray service over loopback through the
-  cage's proxy.
+  home directory. Its tools reach the foray service through a unix socket in
+  the session's directory, which the cage mounts.
 - **pi on a local model** is a good default for the triage: it is called on
   every item, and the paid model is better spent on the help it asks for.
 - Its standing instructions (`CLAUDE.md` / pi's system prompt in its
   directory): what the list is for, who uses it, how to triage, when to ask
   for help, when to ask the people instead.
 
-**Its tools** (`foray mcp`): `list_items`, `get_item`, `add_item`,
-`update_item`, `set_state`, `attach` (a file or an answer to an item),
-`request_help` (records a help request on the item and sends the A2A task).
-Plus the shrooms tools every session has: `list_agents`, `ask_agent`,
-`task_status`.
+**Its tools** (`foray mcp`, as built): `get_context`, `list_items`,
+`get_item`, `add_item`, `update_item`, `comment`, `record_help` (records a
+help request on the item and its progress; the session sends the A2A task
+itself), `decide_suggestion`. Plus its own browser (`web_search`,
+`read_page`) and the shrooms tools every session has: `list_agents`,
+`ask_agent`, `task_status`.
 
 ## 5. Adding, triaging, helping
 

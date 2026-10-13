@@ -61,11 +61,17 @@ them:
 ```json
 {"place": "Prague, Czechia", "language": "English", "currency": "CZK",
  "notes": "Car: 2019 Octavia, tyres 205/55 R16.\nWe shop at Albert and Rohlik.",
+ "helpers": [{"agent": "k11/research", "for": "prices, shops"}],
  "by": "phone.home", "updated": "2026-10-11T14:02:00Z"}
 ```
 
+`helpers` are the agents the session may ask for help (`MACHINE/SESSION`, up
+to 20, each with what it is for).
+
 `PUT` replaces it (place, language and currency a line each, notes up to
-4000 characters) and tells the session. Only people change it: the session
+4000 characters) and tells the session. New helpers are set to take the
+session's tasks even though it is caged; the answer says how that went, per
+helper, in `trust`. Only people change it: the session
 reads it with `get_context` and gets a 403 if it tries to write it. It is
 also in `GET /v1/lists/{list}` as `context`. A change to it moves the list's
 `seq` but is not one of the `changes`: those are items.
@@ -85,6 +91,7 @@ to draw. 409 when this machine is not on the list's mesh.
 
 ```json
 {"id": "2xckcz", "title": "buy winter tires", "notes": "",
+ "summary": "…", "summary_by": "foray-home",   // markdown, up to 8000 characters: what is known, with links
  "state": "open",                      // suggested | inbox | open | waiting | done | dropped
  "due": "2026-11-01",                  // or "2026-11-01T09:00:00+01:00", or absent
  "who": "Václav", "tags": ["car"],
@@ -107,10 +114,10 @@ States, for the apps:
 | | Body | |
 |---|---|---|
 | `POST /v1/lists/{list}/items` | `{title, notes?, due?, who?, tags?, state?}` | 201, the item. State defaults to open. The session is told. |
-| `PATCH /v1/lists/{list}/items/{id}` | any of `{title, notes, state, due, who, tags}` | the item. A field left out is unchanged; `""` clears `notes`, `due` and `who`, `[]` clears `tags`; `title` cannot be emptied. |
+| `PATCH /v1/lists/{list}/items/{id}` | any of `{title, notes, summary, state, due, who, tags}` | the item. A field left out is unchanged; `""` clears `notes`, `due` and `who`, `[]` clears `tags`; `title` cannot be emptied. |
 | `POST /v1/lists/{list}/items/{id}/comments` | `{text}` | the item. The session is told (answers to its questions arrive this way). |
-| `POST /v1/lists/{list}/items/{id}/ask` | `{kind, text?}` — kind: `find out`, `compare`, `draft`, `plan` | the item. Asks the list's session to get an agent's help; recorded as a comment. 409 if the list has no session. |
-| `POST /v1/lists/{list}/allow` | `{from}` — `MACHINE/SESSION` or `MACHINE/*` | lets a refused suggester suggest |
+| `POST /v1/lists/{list}/items/{id}/ask` | `{kind, text?, to?}` — kind: `analyze`, `find out`, `compare`, `draft`, `plan`; `to`: one of the list's helpers | the item. Asks the list's session to get help (`analyze`: it decides what would help); recorded as a comment. 400 if `to` is not a helper, 409 if the list has no session. |
+| `POST /v1/lists/{list}/allow` | `{from}` — `MACHINE/SESSION` or `MACHINE/*` | `{suggest_from}`. Lets a refused suggester suggest |
 | `POST /v1/lists/{list}/ignore` | `{from}` | 204, forgets its request |
 
 Agents use `POST /v1/lists/{list}/suggest` (`{title, notes?, why?}`, with
@@ -123,7 +130,7 @@ records help through `POST …/items/{id}/help`, on loopback only.
   and done folded away. Suggested items only behind a count, if at all.
 - An item: title, notes, due, who, tags; its comments as a conversation (the
   session's questions are comments); its help requests with state and
-  answer; "ask for help" with the four kinds.
+  answer; "ask for help" with its kinds.
 - "Wants to suggest items" for each `asks` entry: allow, or ignore.
 - Notifications: something due today, the session asked something (a comment
   by the list's session), help came back (a help entry turned completed).
