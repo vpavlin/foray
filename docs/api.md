@@ -23,12 +23,12 @@ apps find agents, and shows what it finds grouped by mesh.
 What the service calls the caller — how an app tells "you" from somebody else
 in `added_by` and comment `by`, and knows up front whether it can write:
 ```json
-{"name": "phone.home", "mesh": "home", "local": false, "can_write": true, "machine": "proteus"}
+{"name": "phone.home", "mesh": "home", "local": false, "can_write": true, "machine": "server"}
 ```
 
 ### `GET /v1/lists`
 ```json
-{"machine": "proteus",
+{"machine": "server",
  "lists": [{"name": "home", "title": "Home", "mesh": "home", "session": "foray-home",   // "" when the list has no assistant
             "seq": 41, "counts": {"open": 7, "waiting": 2, "done": 30, "suggested": 1}}]}
 ```
@@ -59,8 +59,8 @@ What the household tells its session about itself, so triage and help fit
 them:
 
 ```json
-{"place": "Prague, Czechia", "language": "English", "currency": "CZK",
- "notes": "Car: 2019 Octavia, tyres 205/55 R16.\nWe shop at Albert and Rohlik.",
+{"place": "Brno, Czechia", "language": "English", "currency": "CZK",
+ "notes": "Car: 2018 Golf, tyres 205/55 R16.\nWe shop at the market on Saturdays.",
  "helpers": [{"agent": "k11/research", "for": "prices, shops"}],
  "by": "phone.home", "updated": "2026-10-11T14:02:00Z"}
 ```
@@ -94,7 +94,7 @@ to draw. 409 when this machine is not on the list's mesh.
  "summary": "…", "summary_by": "foray-home",   // markdown, up to 8000 characters: what is known, with links
  "state": "open",                      // suggested | inbox | open | waiting | done | dropped
  "due": "2026-11-01",                  // or "2026-11-01T09:00:00+01:00", or absent
- "who": "Václav", "tags": ["car"],
+ "who": "Alex", "tags": ["car"],
  "added_by": "phone.home",             // a device, or an agent session
  "suggested_by": "laptop/shrooms",     // only on agents' suggestions
  "created": "…", "updated": "…",

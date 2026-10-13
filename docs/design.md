@@ -1,6 +1,6 @@
 # Foray — design
 
-**Status:** built, 2026-10-11; running on proteus with the list on the office mesh while it is tried out.
+**Status:** built, 2026-10-11; in daily use on one server, with a home list and an office list.
 
 A todo list for a household — "buy XYZ", "schedule the tire change" — that two
 people share from their phones and desktops, with an agent session that knows
@@ -16,7 +16,7 @@ A2A tasks for asking agents, and Scala for the calendar.
 
 ```
    phone (Foray app) ─┐                    ┌─ foray-home  (an agent session on the same machine)
-   wife's phone ─────┼── mesh ── todo ────┤     triage, help, conversation
+   second phone ─────┼── mesh ── todo ────┤     triage, help, conversation
    Basecamp (Todo) ──┘          service   └─ other sessions (research, drafts) via A2A
                                   │
                                   └── Scala calendar (phase 2)
@@ -39,8 +39,8 @@ A2A tasks for asking agents, and Scala for the calendar.
 - One machine hosts them (decided). A machine can host several lists, one per
   mesh it is on.
 - **Access is the mesh**, as for the agents: whoever is on the home mesh can
-  read and edit the home list. That is the point — your wife's phone joins the
-  home mesh and sees exactly the home list.
+  read and edit the home list. That is the point — a second person's phone
+  joins the home mesh and sees exactly the home list.
 - The apps discover lists the way the agents apps discover agents: they probe
   the peers of each mesh the device is on, and show what they find grouped by
   mesh.
@@ -50,9 +50,9 @@ A2A tasks for asking agents, and Scala for the calendar.
 | Field | |
 |---|---|
 | `id`, `title`, `notes` | |
-| `state` | `inbox` → `open` → `waiting` (on somebody or something) → `done` / `dropped` |
+| `state` | `open` → `waiting` (on somebody or something) → `done` / `dropped`; an agent's suggestion starts as `suggested`, and goes to `inbox` once accepted |
 | `due` | a date, or a date and time; optional |
-| `who` | free text: "Václav", "both"; optional |
+| `who` | free text: "Alex", "both"; optional |
 | `tags` | free |
 | `added_by` | the device or agent that added it ("phone.home", "laptop/shrooms") |
 | `help` | requests made for it: the kind, the worker, the A2A task id, its state, the answer and any files |
@@ -95,11 +95,12 @@ session triages when it gets to it: due date, tags, a question back to
 whoever added it, or an offer of help. Its question and its offer appear on
 the item in the app.
 
-**Agents add through the session.** An agent that thinks something belongs on
-the list sends `foray-home` a task ("the domain renews on the 20th"). The
-session decides whether and how to add it — new item, a note on an existing
-one, or nothing. Items it adds land in `inbox`, marked who suggested them;
-only a person moves them on.
+**Agents suggest; the session decides.** An agent that thinks something
+belongs on the list suggests it ("the domain renews on the 20th"). The
+service checks the agent may (§9) and adds it as `suggested`, marked with
+who suggested it. The session decides: accept it into the `inbox`, fold it
+into an item it repeats, or drop it. From the inbox only a person moves it
+on.
 
 **Help is a task.** From an item, a person or the session asks for one of:
 
@@ -118,15 +119,15 @@ a person sends, buys, books.
 
 ## 6. Scala — phase 2
 
-From Scala's author (jimmy-crib/vpavlin, 2026-10-11), checked against Scala
-core 0.12.4. He has offered to build this bridge once the design is approved.
+From Scala's author (2026-10-11), checked against Scala core 0.12.4, who has
+offered to build this bridge once the design is approved.
 
 **The runtime.** Not the old `hub/scala-hub.sh` (logoscore, the 0.2 stack):
 `logosctl`, Basecamp 0.3's runtime, in an isolated session on the list's
 machine — `HOME=<dir>/home LOGOSCTL_CONFIG_DIR=<dir>/cfg logosctl daemon
 start --detach`, the `delivery_module`, `ble_mesh`, `loam_core` and `scala`
 packages installed, `scala` loaded, then `logosctl call scala <method> …`.
-His VPS hub runs this way.
+A Scala hub on a VPS runs this way.
 
 **The calendar.** The service **owns** a "Home" calendar (`createCalendar`,
 with an empty identity so it signs with its own device key and never waits on
@@ -159,7 +160,7 @@ but all-day and recurrence are local.
 
 **Running it.** Calls can time out (20 s) while storage is busy: retry, and
 never retry a create without checking (another reason for `putEvent`). An
-offline hub reconciles on reconnect, in seconds to minutes. His hub once had
+offline hub reconciles on reconnect, in seconds to minutes. A hub has had
 its delivery layer wedge silently ("request queue full") while reporting
 Connected, so: a watchdog on `delivery_module getConnectionStatus` that
 restarts it, and sync tested against a fresh second node, not trusted from a
@@ -199,21 +200,21 @@ Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 | | |
 |---|---|
 | **Name** | **Foray** (Shrooms Foray): a mushroom foray is the trip out to gather — errands, shopping, bringing things home |
-| **Host** | proteus (moved from jimmy-crib the same day: it already had the Venice key, and has podman for the session's cage) |
+| **Host** | one always-on server: one that already has a model provider's key, and podman for the session's cage |
 | **Storage** | an append-only event log per list (JSON lines), folded into state and snapshotted. One machine today, and the same log is what a later multi-writer sync (phase 4) replicates, so nothing is rewritten for it |
-| **Triage** | pi on a cheap Venice model — `deepseek-v4-1-flash` or `z-ai-glm-5-3-flash`, what pi5, proteus and scribe already use |
-| **People** | vpavlin, and his wife: shrooms and the Foray app on her devices, on the home mesh |
-| **Agents that may add** | a configurable allow list of `MACHINE/SESSION`; at first only `laptop/shrooms` |
+| **Triage** | pi on a cheap hosted model (a small "flash" model from a model provider), as the other agents on the mesh already use |
+| **People** | two at first: shrooms and the Foray app on each one's devices, on the home mesh |
+| **Agents that may add** | a configurable allow list of `MACHINE/SESSION`; at first one agent on the laptop (`laptop/shrooms`) |
 
 ### Agents adding, and who checks
 
 "An agent asks the Foray session, and the session decides" stays the flow, but
 the **gate is not the session's judgement** — a model can be talked into
 anything. Suggestions go to the foray service first, as an A2A agent of its
-own (`proteus/foray`): it identifies the caller the way shrooms-agent does
+own (`server/foray`): it identifies the caller the way shrooms-agent does
 (the machine from the mesh, the session from what its agent says), checks the
-allow list, puts the suggestion in the inbox marked with who sent it, and
-hands it to `foray-home` to triage. A caller not on the list is refused, and
+allow list, adds the suggestion as `suggested`, marked with who sent it, and
+hands it to `foray-home` to decide on. A caller not on the list is refused, and
 appears in the app as "wants to add items — allow?", the way refused file
 senders do in Shrooms Agents.
 
@@ -221,18 +222,17 @@ senders do in Shrooms Agents.
 
 Two things to do first, neither of them code:
 
-1. **proteus is on the office mesh only**, and the list lives there while it
-   is tried out (its label for the office mesh is `default`). For the
-   household, proteus joins the home mesh — an invite from the laptop (whose
-   admin key the home mesh is) and a restart of its daemon — and the list's
-   `mesh` changes to `home`.
+1. **The server is on the home mesh.** If it is on another mesh only (the
+   list tried out there first), it joins the home mesh — an invite from the
+   mesh's admin machine and a restart of its daemon — and the list's `mesh`
+   changes to `home`.
 2. **Every agent session on a home-mesh machine is visible from the home
    mesh** unless limited: a session with no `meshes` setting serves every
-   mesh its machine is on. The laptop is on the home mesh today, and so will
-   proteus be — so before her phone joins, every session on those machines
-   that is not meant for the household gets `meshes: [office]` (or whichever).
-   Otherwise her phone could open them and drive them. Worth a default in
-   shrooms-agent ("new sessions serve only these meshes"); until then, by hand.
+   mesh its machine is on. So before the second person's phone joins, every
+   session on the home mesh's machines that is not meant for the household
+   gets `meshes: [office]` (or whichever). Otherwise their phone could open
+   them and drive them. Worth a default in shrooms-agent ("new sessions serve
+   only these meshes"); until then, by hand.
 
 ## 11. A name from the mycelium
 
@@ -248,10 +248,10 @@ Chosen: **Foray**.
 
 ## 12. Open questions
 
-1. **Venice key:** the session uses proteus's, shared with the proteus
-   session (a daily DIEM allowance). Its own key, with its own budget, if
-   triage ever competes with proteus.
-2. **Notifications on the wife's phone:** the Foray app's own, or Scala
-   reminders only?
+1. **Model key:** the session uses the server's model provider key, shared
+   with the other sessions there (and their daily allowance). Its own key,
+   with its own budget, if triage ever competes with them.
+2. **Notifications on the second person's phone:** the Foray app's own, or
+   Scala reminders only?
 3. **`putEvent` public:** the bridge is simpler and safer with it; ask Scala
    to ship 0.12.4 publicly before phase 3.
