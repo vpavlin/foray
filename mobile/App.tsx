@@ -298,7 +298,9 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   const reloadUnsent = useCallback(() => pending(base, info.name).then(setUnsent), [base, info.name]);
   // Send what this phone kept while the computer didn't answer, oldest first.
   const sendWaiting = useCallback(async () => {
-    if (!(await pending(base)).length) return;
+    // Sent already, by the lists' check or the background task: still read the outbox again, or
+    // the marks stay (and an add shows twice: the item caught up, and its unsent copy).
+    if (!(await pending(base)).length) { reloadUnsent(); return; }
     const f = await flush(base);
     for (const x of f.sent) if (x.list === info.name) upsert(x.item);
     if (Object.keys(f.ids).length) setSel((cur) => (cur && f.ids[cur] ? f.ids[cur] : cur));
