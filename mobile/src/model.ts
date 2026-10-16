@@ -4,7 +4,7 @@ import { stripMarkdown } from "./md.ts";
 
 export type State = "suggested" | "inbox" | "open" | "waiting" | "done" | "dropped";
 
-export interface Comment { by: string; at: string; text: string }
+export interface Comment { by: string; at: string; text: string; unsent?: boolean }   // unsent: in this phone's outbox, not sent yet
 export interface Help { task?: string; worker?: string; kind: string; state: string; ask?: string; answer?: string; updated?: string }
 export interface Item {
   id: string; title: string; notes?: string; state: State;
@@ -12,6 +12,7 @@ export interface Item {
   added_by?: string; suggested_by?: string; created?: string; updated?: string;
   comments?: Comment[]; help?: Help[]; calendar?: string;
   summary?: string; summary_by?: string;   // what's known about it, in markdown; usually the assistant's
+  unsent?: boolean;   // changed on this phone while its computer didn't answer: in the outbox, not sent yet
 }
 export interface ListInfo {
   name: string; title: string; mesh: string; session?: string; seq: number;
@@ -276,4 +277,49 @@ export function parseForayLink(url: string | null | undefined): ForayLink | null
   if (m[1] === "add") return { kind: "add", address, port };
   const list = (q.get("list") || "").trim(), id = (q.get("id") || "").trim();
   return list && id ? { kind: "item", address, port, list, id } : null;
+}
+
+// ── writes waiting for the list's computer (the outbox, docs/design.md §7.1) ──
+// An add, an update or a comment made while the list's computer doesn't answer is kept here and sent
+// when it does, oldest first. Nothing merges on the phone: the service decides, and the next catch-up
+// shows what it decided. Until then the list shows the writes on top of the kept copy, marked unsent.
+export type AddBody = { title: string; notes?: string; due?: string; who?: string; tags?: string[]; state?: string };
+export type PatchBody = Partial<Pick<Item, "title" | "notes" | "state" | "due" | "who" | "tags" | "summary">>;
+export type NewOp = { kind: "add"; body: AddBody } | { kind: "patch"; item: string; body: PatchBody } | { kind: "comment"; item: string; text: string };
+export type OutOp = NewOp & { id: string; at: string; base: string; list: string };
+/** An added item has no id of its own until it is sent; until then it goes by its op's id. */
+export const UNSENT_PREFIX = "unsent-";
+export const isUnsentId = (id: string | undefined) => !!id && id.startsWith(UNSENT_PREFIX);
+
+/** The list as this phone shows it: the kept or fetched items, with the unsent writes on top. */
+export function withOutbox(items: Item[], ops: OutOp[], me: string): Item[] {
+  if (!ops.length) return items;
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const order = items.map((i) => i.id);
+  for (const op of ops) {
+    if (op.kind === "add") {
+      const b = op.body;
+      byId.set(op.id, { id: op.id, title: b.title, notes: b.notes, due: b.due, who: b.who, tags: b.tags,
+        state: (b.state as State) || "open", added_by: me, created: op.at, updated: op.at, unsent: true });
+      order.push(op.id);
+      continue;
+    }
+    const cur = byId.get(op.item);
+    if (!cur) continue;   // gone from the list: the service will say what happened when it's sent
+    if (op.kind === "patch") byId.set(op.item, { ...cur, ...op.body, updated: op.at, unsent: true });
+    else byId.set(op.item, { ...cur, comments: [...(cur.comments || []), { by: me, at: op.at, text: op.text, unsent: true }], unsent: true });
+  }
+  return order.map((id) => byId.get(id)!).filter(Boolean);
+}
+
+/** After an unsent add is sent: later ops on that item now name the id the service gave it. */
+export function remapOps(ops: OutOp[], from: string, to: string): OutOp[] {
+  return ops.map((o) => (o.kind !== "add" && o.item === from ? { ...o, item: to } : o));
+}
+
+/** The lists shown: each computer that answered replaces its own lists; the others keep the copy. */
+export function mergeFound<T extends { base: string; list: { mesh: string; title: string; name: string } }>(prev: T[], fresh: T[], answered: string[]): T[] {
+  const ok = new Set(answered);
+  const out = [...prev.filter((f) => !ok.has(f.base)), ...fresh];
+  return out.sort((a, b) => a.list.mesh.localeCompare(b.list.mesh) || (a.list.title || a.list.name).localeCompare(b.list.title || b.list.name));
 }

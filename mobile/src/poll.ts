@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { api } from "./api";
 import { baseUrl, notesFromChanges, dueTodayNotes, ListInfo } from "./model";
 import { store } from "./store";
+import { flush } from "./outbox";
 
 export interface Found { base: string; machine: string; list: ListInfo }
 
@@ -14,24 +15,29 @@ async function ensureChannel() {
   channelReady = true;
 }
 
-/** Every list the remembered computers answer for. A computer that doesn't answer is skipped. */
-export async function findLists(): Promise<{ found: Found[]; unreachable: string[] }> {
+/** Every list the remembered computers answer for. A computer that doesn't answer is skipped;
+ *  `answered` names the ones that did (their bases), and `onMachine` hears from each as it answers. */
+export async function findLists(onMachine?: (base: string, lists: Found[]) => void): Promise<{ found: Found[]; unreachable: string[]; answered: string[] }> {
   const machines = await store.machines();
-  const found: Found[] = [], unreachable: string[] = [];
+  const found: Found[] = [], unreachable: string[] = [], answered: string[] = [];
   await Promise.all(machines.map(async (m) => {
     const base = baseUrl(m.address, m.port);
     try {
       const r = await api.lists(base);
-      for (const l of r.lists || []) found.push({ base, machine: r.machine || m.address, list: l });
+      const mine = (r.lists || []).map((l) => ({ base, machine: r.machine || m.address, list: l }));
+      found.push(...mine); answered.push(base);
+      if (onMachine) onMachine(base, mine);
     } catch { unreachable.push(m.address); }
   }));
   found.sort((a, b) => a.list.mesh.localeCompare(b.list.mesh) || a.list.title.localeCompare(b.list.title));
-  return { found, unreachable };
+  return { found, unreachable, answered };
 }
 
-/** Check every list; notify unless `quiet` (e.g. the list is open on screen). Returns the lists found. */
-export async function checkAll(opts: { notify: boolean; quietList?: string } = { notify: true }): Promise<Found[]> {
-  const { found } = await findLists();
+/** Check every list; notify unless `quiet` (e.g. the list is open on screen). Sends the writes
+ *  waiting for each computer that answered. Returns the lists found and who answered. */
+export async function checkAll(opts: { notify: boolean; quietList?: string } = { notify: true }): Promise<{ found: Found[]; answered: string[] }> {
+  const { found, answered } = await findLists();
+  for (const b of answered) await flush(b).catch(() => {});
   const seqs = await store.seqs(), seen = await store.seen(), me = await store.me();
   // What each computer calls this phone, so its own changes don't notify it.
   for (const b of new Set(found.map((f) => f.base))) { try { const w = await api.whoami(b); if (w && w.name) me[b] = w.name; } catch { /* keep the last known */ } }
@@ -64,5 +70,5 @@ export async function checkAll(opts: { notify: boolean; quietList?: string } = {
   }
   await store.setSeqs(seqs);
   await store.setSeen(seen);
-  return found;
+  return { found, answered };
 }
