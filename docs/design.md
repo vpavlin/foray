@@ -185,6 +185,32 @@ and Android, doing the same things:
 
 Neither needs Shrooms Agents. Both need shrooms, for the mesh.
 
+### 7.1 Local copies, then catching up (2026-10-16)
+
+Opening a list used to wait for the network: every machine asked for its
+lists, the list read whole, and a machine that did not answer cost a timeout
+before anything showed. Now each app keeps what it last saw and shows that
+first:
+
+- **Kept on the device:** the lists found, and for each list its items, asks,
+  context and the `seq` they are at. The phone keeps it in its storage,
+  Basecamp in foray_core's prefs.
+- **On open:** the kept copy at once, then `GET …/changes?since=SEQ`. Each
+  event carries the whole item after it, so an item is replaced by id; a
+  `reset`, or a `seq` that moved with no events (the context, an ask), reads
+  the list whole, as before.
+- **Writing while the list's machine does not answer:** an add, an update or
+  a comment is kept in an outbox on the device and sent when it answers,
+  oldest first, and shown as waiting until then. The service stays the one
+  place that decides what is true, so nothing merges on the device: what was
+  sent is what the next catch-up shows.
+- A copy names the machine it came from. A list's copy is dropped when the
+  list is forgotten, and replaced when the list comes back with a `reset`.
+
+Not done: devices syncing with each other without the service. The list's
+session runs beside the service anyway, and a household's few devices are
+online together often enough.
+
 ## 8. Phases
 
 1. **The list.** Service, per-mesh lists, Basecamp and Android apps, direct
