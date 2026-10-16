@@ -204,6 +204,11 @@ first:
   oldest first, and shown as waiting until then. The service stays the one
   place that decides what is true, so nothing merges on the device: what was
   sent is what the next catch-up shows.
+- **Sent twice, applied once (next):** a write whose answer is lost (a
+  timeout after the service took it) is sent again from the outbox. Each
+  write carries its outbox id as `Idempotency-Key`; the service keeps the
+  keys it applied per list for a day and answers a repeat with the first
+  answer. Until the service knows the header the apps send it anyway.
 - A copy names the machine it came from. A list's copy is dropped when the
   list is forgotten, and replaced when the list comes back with a `reset`.
 
