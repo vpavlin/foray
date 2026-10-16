@@ -39,6 +39,67 @@ Item {
         if (t.charAt(0) !== "{" && t.charAt(0) !== "[") return null
         try { return JSON.parse(t) } catch (e3) { return null }
     }
+    // A preference as kept: text. call() reads JSON only, so a plain value
+    // ("due", a list's key) came back null and was never restored.
+    function pref(key) {
+        if (!haveCore) return ""
+        var t = ""
+        try { t = String(bridge.callModule("foray_core", "getPref", [key]) || "").trim() } catch (e) { return "" }
+        for (var i = 0; i < 2 && t.charAt(0) === '"'; i++) {
+            try { t = String(JSON.parse(t)) } catch (e2) { break }
+        }
+        return t
+    }
+
+    // --- kept on this machine (design §7.1) -------------------------------------
+    //
+    // The lists and each list as last read, shown at once while the network
+    // catches up; and what was written while a list's machine did not answer,
+    // sent when it does. The service still decides: nothing merges here.
+    property var kept: ({})        // list key -> {items, asks, context, seq}
+    property var outbox: []        // [{key, address, method, path, body}], oldest first
+    function loadKept() {
+        var k = null, o = null, l = null
+        try { k = JSON.parse(pref("kept") || "{}") } catch (e) {}
+        try { o = JSON.parse(pref("outbox") || "[]") } catch (e2) {}
+        try { l = JSON.parse(pref("lists") || "[]") } catch (e3) {}
+        root.kept = k || {}
+        root.outbox = Array.isArray(o) ? o : []
+        if (Array.isArray(l) && l.length > 0 && root.lists.length === 0) root.lists = l
+    }
+    function keep(key, d) {
+        var k = Object.assign({}, root.kept)
+        k[key] = d
+        root.kept = k
+        call("foray_core", "setPref", ["kept", JSON.stringify(k)])
+    }
+    function keepCurrent() {
+        if (current !== null) keep(current.key, { items: items, asks: asks, context: context, seq: seq })
+    }
+    function saveOutbox() { call("foray_core", "setPref", ["outbox", JSON.stringify(root.outbox)]) }
+    // Not an answer at all, as against the service saying no: only these wait.
+    function unreachable(d) { return !d || /^(cannot reach|socket:|write:|read:)/.test(String(d.error || "")) }
+    function waitingHere() {
+        var n = 0
+        for (var i = 0; i < outbox.length; i++) if (current !== null && outbox[i].key === current.key) n++
+        return n
+    }
+    // Oldest first; stops at the first that still finds no one.
+    function flushOutbox() {
+        if (outbox.length === 0) return
+        var left = outbox.slice(), sent = false
+        while (left.length > 0) {
+            var w = left[0]
+            var d = call("foray_core", "send", [w.address, w.method, w.path, w.body])
+            if (unreachable(d)) break
+            left.shift()
+            sent = true
+            if (d.error) root.said = "a change kept while offline was refused: " + d.error
+        }
+        root.outbox = left
+        saveOutbox()
+        if (sent) reloadList()
+    }
 
     // --- finding the lists --------------------------------------------------------
     //
@@ -85,14 +146,21 @@ Item {
         if (arg === "") return
         var f = call("foray_core", "find", [arg])
         if (f === null) { root.problem = "Foray's core module is missing: install foray_core and restart Basecamp."; return }
-        root.lists = readFound(f)
+        setLists(readFound(f))
+    }
+    // The lists found, once any are: until then the ones kept from last time
+    // stay, rather than an empty screen while the machines are asked.
+    function setLists(found) {
+        if (found.length === 0) return
+        root.lists = found
+        call("foray_core", "setPref", ["lists", JSON.stringify(found)])
     }
     function pollFound() {
         var f = call("foray_core", "found", [])
         if (f !== null) {
-            root.lists = readFound(f)
+            setLists(readFound(f))
             if (current === null && lists.length > 0) {
-                var want = String(call("foray_core", "getPref", ["last_list"]) || "")
+                var want = pref("last_list")
                 var pick = lists[0]
                 for (var i = 0; i < lists.length; i++) if (lists[i].key === want) pick = lists[i]
                 openList(pick)
@@ -118,10 +186,20 @@ Item {
     function openList(l) {
         root.current = l
         root.selectedId = ""
-        root.items = []
-        root.seq = 0
         call("foray_core", "setPref", ["last_list", l.key])
-        reloadList()
+        // As last read, at once; then only what changed since.
+        var k = root.kept[l.key]
+        if (k) {
+            root.items = k.items || []
+            root.asks = k.asks || []
+            root.context = k.context || {}
+            root.seq = k.seq || 0
+            pollChanges()
+        } else {
+            root.items = []
+            root.seq = 0
+            reloadList()
+        }
     }
     function reloadList() {
         if (current === null) return
@@ -131,14 +209,40 @@ Item {
         root.asks = d.asks || []
         root.context = d.context || {}
         root.seq = d.list ? d.list.seq : 0
+        keepCurrent()
     }
+    // What changed since the copy: each event is the whole item after it,
+    // so items are replaced by id. A reset, or a seq that moved with no
+    // events (the context, an ask), reads the list whole.
     function pollChanges() {
         if (current === null) return
+        flushOutbox()
         var d = call("foray_core", "get", [current.address, listPath("/changes?since=" + root.seq)])
-        if (d && !d.error && d.seq !== root.seq) reloadList()
+        if (!d || d.error || d.seq === root.seq) return
+        var ev = d.events || []
+        if (d.reset || ev.length === 0) { reloadList(); return }
+        var its = root.items.slice()
+        for (var i = 0; i < ev.length; i++) {
+            if (!ev[i].item) continue
+            var at = -1
+            for (var j = 0; j < its.length; j++) if (its[j].id === ev[i].item.id) { at = j; break }
+            if (at >= 0) its[at] = ev[i].item; else its.push(ev[i].item)
+        }
+        root.items = its
+        root.seq = d.seq
+        keepCurrent()
     }
     function write(method, sub, body) {
         var d = call("foray_core", "send", [current.address, method, listPath(sub), JSON.stringify(body)])
+        // The list's machine did not answer: kept, and sent when it does.
+        if (unreachable(d) && method !== "PUT") {
+            var o = root.outbox.slice()
+            o.push({ key: current.key, address: current.address, method: method, path: listPath(sub), body: JSON.stringify(body) })
+            root.outbox = o
+            saveOutbox()
+            root.said = ""
+            return { waiting: true }
+        }
         if (!d || d.error) { root.said = d ? d.error : "no answer"; return null }
         root.said = ""
         reloadList()
@@ -279,10 +383,14 @@ Item {
         call("foray_core", "setPref", ["group", group])
     }
     Component.onCompleted: {
-        var s = String(call("foray_core", "getPref", ["sort"]) || ""), g = String(call("foray_core", "getPref", ["group"]) || "")
+        loadKept()
+        // The last list, as kept, before any machine is asked.
+        var want = pref("last_list")
+        for (var i = 0; i < lists.length; i++) if (lists[i].key === want && kept[want]) { openList(lists[i]); break }
+        var s = pref("sort"), g = pref("group")
         if (["due", "created", "updated", "title"].indexOf(s) >= 0) sortBy = s
         if (["state", "none", "who", "tag"].indexOf(g) >= 0) groupBy = g
-        var p = String(call("foray_core", "getPref", ["panes"]) || "").split(",")
+        var p = pref("panes").split(",")
         if (p.length === 2 && +p[0] > 0 && +p[1] > 0) { leftWidth = +p[0]; rightWidth = +p[1] }
     }
     function dueKey(it) { return it.due ? it.due : "9999" }
@@ -527,6 +635,9 @@ Item {
                 }
             }
             Text { visible: root.said !== ""; text: root.said; color: cRust; font.pixelSize: 12 }
+            Text { objectName: "waiting"; visible: root.waitingHere() > 0; color: cAmber
+                   text: root.waitingHere() + (root.waitingHere() === 1 ? " change waits" : " changes wait") + " for " + (root.current ? root.current.machine : "its machine") + " to answer"
+                   font.pixelSize: 12 }
 
             // Sort and group.
             Flow {

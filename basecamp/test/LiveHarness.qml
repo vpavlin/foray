@@ -17,6 +17,10 @@ Item {
         x.send(body || null)
         return x.responseText || "{}"
     }
+    // The core's prefs, kept here; and the list's machine not answering.
+    property var prefs: ({})
+    property bool down: false
+    readonly property string refused: JSON.stringify({ error: "cannot reach fd00::1: Connection refused" })
     QtObject {
         id: fake
         property var callModule: function (module, method, args) {
@@ -25,13 +29,44 @@ Item {
             if (module !== "foray_core") return ""
             if (method === "find" || method === "found")
                 return JSON.stringify([{ address: "fd00::1", peer: "laptop", mesh: "home", reply: JSON.parse(top.http("GET", "/v1/lists")) }])
-            if (method === "get") return top.http("GET", args[1])
-            if (method === "send") return top.http(args[1], args[2], args[3])
-            if (method === "getPref") return ""
+            if (method === "get") return top.down ? top.refused : top.http("GET", args[1])
+            if (method === "send") return top.down ? top.refused : top.http(args[1], args[2], args[3])
+            if (method === "getPref") return top.prefs[args[0]] || ""
+            if (method === "setPref") { top.prefs[args[0]] = args[1]; return JSON.stringify({ ok: true }) }
             return JSON.stringify({ ok: true })
         }
     }
     Main { id: view; anchors.fill: parent; bridge: fake }
+
+    function count(title) { return JSON.parse(top.http("GET", "/v1/lists/home")).items.filter(function (i) { return i.title === title }).length }
+    // Kept, caught up, and written while the list's machine does not answer
+    // (design §7.1).
+    function offline() {
+        var key = view.current.key
+        var kept = JSON.parse(top.prefs.kept || "{}")[key]
+        console.error("KEPT items=" + (kept ? kept.items.length === view.items.length : false) + " seq=" + (kept ? kept.seq === view.seq : false)
+                      + " sort=" + view.pref("sort") + " lists=" + JSON.parse(top.prefs.lists || "[]").length)
+        // Another device adds one: caught up from the changes, not read whole.
+        var before = view.items.length
+        top.http("POST", "/v1/lists/home/items", JSON.stringify({ title: "Eggs" }))
+        view.pollChanges()
+        console.error("CAUGHTUP=" + (view.items.length === before + 1) + " " + (view.items.filter(function (i) { return i.title === "Eggs" }).length === 1))
+        // Its machine goes away: the list stays, a write waits.
+        top.down = true
+        view.openList(view.current)
+        var shown = view.items.length
+        var r = view.write("POST", "/items", { title: "Offline milk" })
+        console.error("OUTBOX shown=" + (shown === before + 1) + " waits=" + (r && r.waiting) + " n=" + view.waitingHere()
+                      + " kept=" + JSON.parse(top.prefs.outbox || "[]").length + " service=" + top.count("Offline milk") + " said=" + JSON.stringify(view.said))
+        // A refusal is not kept: only no answer is.
+        top.down = false
+        var bad = view.write("PATCH", "/items/nonexistent", { state: "done" })
+        console.error("REFUSED kept=" + view.outbox.length + " said=" + (view.said !== ""))
+        // It answers again: sent, oldest first, and the list read.
+        view.pollChanges()
+        console.error("SENT service=" + top.count("Offline milk") + " left=" + view.outbox.length + " shown=" + view.items.filter(function (i) { return i.title === "Offline milk" }).length)
+        Qt.quit()
+    }
 
     function shot(name, next) {
         top.grabToImage(function (r) { r.saveToFile(top.outDir + "/" + name); console.error("SHOT " + name); next() })
@@ -63,7 +98,7 @@ Item {
                         view.editingContext = false
                         view.setView("title", "tag")
                         console.error("ROWS=" + view.rows.map(function (r) { return r.header ? "[" + r.label + "]" : r.item.title }).join(" | "))
-                        settle.next = function () { top.shot("foray-sorted.png", function () { view.setView("due", "state"); Qt.quit() }) }
+                        settle.next = function () { top.shot("foray-sorted.png", function () { view.setView("due", "state"); top.offline() }) }
                         settle.restart()
                     }) }
                     settle.restart()
