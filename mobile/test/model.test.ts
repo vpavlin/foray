@@ -137,3 +137,42 @@ console.log("MODEL OK");
   assert.equal(M.parseForayLink("https://example.com"), null);
   assert.equal(M.parseForayLink("foray://add?address=%E0%A4%A"), null);
 }
+
+// ── the outbox (docs/design.md §7.1) ──
+{
+  const { withOutbox, remapOps, mergeFound, isUnsentId } = await import("../src/model.ts");
+  type Op = import("../src/model.ts").OutOp;
+  const base = "http://[fd00::1]:7389", at = "2026-10-16T19:00:00Z";
+  const kept = [it("a", "open", { comments: [{ by: "k", at: "", text: "hi" }] }), it("b", "open")];
+  const ops: Op[] = [
+    { id: "unsent-1", at, base, list: "home", kind: "add", body: { title: "Milk", state: "open" } },
+    { id: "unsent-2", at, base, list: "home", kind: "patch", item: "b", body: { state: "done" } },
+    { id: "unsent-3", at, base, list: "home", kind: "comment", item: "a", text: "on it" },
+    { id: "unsent-4", at, base, list: "home", kind: "patch", item: "gone", body: { title: "x" } },
+  ];
+  const shown = withOutbox(kept, ops, "phone.home");
+  assert.deepEqual(shown.map((x) => x.id), ["a", "b", "unsent-1"], "kept order, the unsent add last, a write to a vanished item skipped");
+  assert.equal(shown[1].state, "done");
+  assert.equal(shown[1].unsent, true);
+  assert.equal(shown[2].title, "Milk");
+  assert.equal(shown[2].unsent, true);
+  assert.equal(shown[2].added_by, "phone.home");
+  assert.deepEqual(shown[0].comments!.map((c) => [c.text, !!c.unsent]), [["hi", false], ["on it", true]]);
+  assert.equal(kept[1].state, "open", "the kept copy itself is never changed");
+  assert.equal(withOutbox(kept, [], "me"), kept, "nothing waiting: the same array");
+  assert.ok(isUnsentId("unsent-1") && !isUnsentId("a") && !isUnsentId(undefined));
+
+  const later: Op[] = [
+    { id: "unsent-5", at, base, list: "home", kind: "comment", item: "unsent-1", text: "2 l" },
+    { id: "unsent-6", at, base, list: "home", kind: "patch", item: "b", body: { who: "k" } },
+  ];
+  const re = remapOps(later, "unsent-1", "i42");
+  assert.equal((re[0] as any).item, "i42", "a note on an unsent item follows it to its real id");
+  assert.equal((re[1] as any).item, "b");
+
+  const f = (b: string, name: string, mesh = "home") => ({ base: b, machine: b, list: { name, title: name, mesh, seq: 1 } });
+  const prev = [f("A", "shop"), f("B", "garden"), f("A", "old")];
+  const merged = mergeFound(prev, [f("A", "shop"), f("A", "new")], ["A"]);
+  assert.deepEqual(merged.map((x) => x.base + ":" + x.list.name), ["B:garden", "A:new", "A:shop"], "A replaces its own lists; B, not answering, keeps its copy");
+  assert.deepEqual(mergeFound(prev, [], ["B"]).map((x) => x.list.name), ["old", "shop"], "a computer that answered with no lists has none");
+}

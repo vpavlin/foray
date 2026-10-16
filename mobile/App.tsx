@@ -13,9 +13,10 @@ import { parseMarkdown, stripMarkdown, previewLine, Inline, Block } from "./src/
 import { api, ApiError } from "./src/api";
 import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
+import { enqueue, flush, offline, pending, sendOp } from "./src/outbox";
 import { registerBackground } from "./src/background";
 import { findAgents } from "./src/agents";
-import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, validAgent, trustProblems, Helper, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl, itemRef, parseForayLink } from "./src/model";
+import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, validAgent, trustProblems, Helper, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl, itemRef, parseForayLink, NewOp, OutOp, withOutbox, mergeFound, isUnsentId } from "./src/model";
 
 // The Shrooms palette, dark like the Basecamp view and the Shrooms app. Colour carries meaning:
 // phosphor = primary / done, amber = overdue or needs attention, rust = errors, violet = the
@@ -82,15 +83,39 @@ function Main() {
   const [open, setOpen] = useState<Open | null>(null);
   const [openItem, setOpenItem] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
+  const [stale, setStale] = useState<Set<string>>(new Set());   // computers whose lists are shown from the copy
+  const [unsent, setUnsent] = useState<Record<string, number>>({});   // "base|list" → writes not sent yet
 
+  // The lists this phone last saw show at once; each computer then replaces its own lists as it
+  // answers, so one that is off doesn't hold up the others (docs/design.md §7.1).
+  const shown = useRef<Found[]>([]);
+  const show = useCallback((fs: Found[]) => { shown.current = fs; setFound(fs); store.setFound(fs); }, []);
+  const countUnsent = useCallback(() => store.outbox().then((ops) => {
+    const c: Record<string, number> = {};
+    for (const o of ops) c[o.base + "|" + o.list] = (c[o.base + "|" + o.list] || 0) + 1;
+    setUnsent(c);
+  }), []);
+  const sendWaiting = useCallback((base: string) => flush(base).then((f) => {
+    if (f.failed.length) Alert.alert("Not everything was accepted", f.failed.join("\n\n"));
+    countUnsent();
+  }).catch(() => {}), [countUnsent]);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      setMachines(await store.machines());
-      const r = await findLists();
-      setFound(r.found); setUnreachable(r.unreachable);
+      const ms = await store.machines();
+      setMachines(ms);
+      const bases = new Set(ms.map((m) => baseUrl(m.address, m.port)));
+      if (!shown.current.length) {
+        const kept = (await store.found()).filter((f) => bases.has(f.base));
+        if (kept.length) { shown.current = kept; setFound(kept); }
+      }
+      countUnsent();
+      const r = await findLists((base, lists) => { show(mergeFound(shown.current, lists, [base])); sendWaiting(base); });
+      show(shown.current.filter((f) => bases.has(f.base)));   // a forgotten computer's lists go
+      setUnreachable(r.unreachable);
+      setStale(new Set([...bases].filter((b) => !r.answered.includes(b))));
     } finally { setLoading(false); }
-  }, []);
+  }, [show, countUnsent, sendWaiting]);
 
   // foray://add?address=<overlay>[&port=N]: setting up by scanning a QR instead of typing.
   // foray://item?address=…&list=…&id=…: an item's reference; adds its machine if this phone lacks it,
@@ -130,9 +155,13 @@ function Main() {
 
   // While the app is open: check every 30 s (notifications for lists not on screen).
   useEffect(() => {
-    const t = setInterval(() => { if (AppState.currentState === "active") checkAll({ notify: true, quietList: open?.list.name }).then(setFound).catch(() => {}); }, 30000);
+    const t = setInterval(() => { if (AppState.currentState === "active") checkAll({ notify: true, quietList: open?.list.name }).then((r) => {
+      show(mergeFound(shown.current, r.found, r.answered));
+      setStale((st) => new Set([...st].filter((b) => !r.answered.includes(b))));
+      countUnsent();
+    }).catch(() => {}); }, 30000);
     return () => clearInterval(t);
-  }, [open]);
+  }, [open, show, countUnsent]);
 
   if (machines === null) return <View style={{ flex: 1 }} />;
   if (open) return <ListScreen key={open.base + "|" + open.list.name + "|" + (openItem || "")} base={open.base} info={open.list} initialItem={openItem} onBack={() => { setOpen(null); setOpenItem(null); refresh(); }} />;
@@ -160,10 +189,12 @@ function Main() {
             {fs.map((f) => {
               const c = f.list.counts || {};
               const todo = (c.open || 0) + (c.inbox || 0);
+              const n = unsent[f.base + "|" + f.list.name] || 0;
               return (
                 <Pressable key={f.base + f.list.name} style={s.listCard} onPress={() => setOpen({ base: f.base, list: f.list })}>
                   <Text style={s.listTitle}>{f.list.title || f.list.name}</Text>
-                  <Text style={s.sub}>{[todo ? `${todo} to do` : "Nothing to do", c.waiting ? `${c.waiting} waiting` : ""].filter(Boolean).join(" · ")}</Text>
+                  <Text style={s.sub}>{[todo ? `${todo} to do` : "Nothing to do", c.waiting ? `${c.waiting} waiting` : "", stale.has(f.base) ? "as last seen" : ""].filter(Boolean).join(" · ")}</Text>
+                  {n > 0 && <Text style={[s.sub, { color: C.warn }]}>{n === 1 ? "1 change" : `${n} changes`} not sent yet</Text>}
                 </Pressable>
               );
             })}
@@ -214,7 +245,7 @@ function Settings({ onClose }: { onClose: () => void }) {
   useEffect(load, [load]);
   const remove = (m: Machine) => Alert.alert("Forget this computer?", "Its lists stay where they are; this phone just stops showing them.", [
     { text: "Keep", style: "cancel" },
-    { text: "Forget", style: "destructive", onPress: async () => { await store.setMachines(ms.filter((x) => x !== m)); load(); } },
+    { text: "Forget", style: "destructive", onPress: async () => { await store.setMachines(ms.filter((x) => x !== m)); await store.forget(baseUrl(m.address, m.port)); load(); } },
   ]);
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
@@ -251,18 +282,63 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   const [sel, setSel] = useState<string | null>(initialItem);
   const [ctx, setCtx] = useState<ListContext | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [away, setAway] = useState(false);   // the computer isn't answering: showing what the phone kept
+  const [unsent, setUnsent] = useState<OutOp[]>([]);
   const seq = useRef(0);
 
+  const upsert = (it: Item) => setItems((xs) => applyChanges(xs, [{ seq: Number.MAX_SAFE_INTEGER, at: "", by: "", op: "update", item: it }]));
   const load = useCallback(async () => {
     try {
       const r = await api.list(base, info.name);
       setList(r.list); setItems(r.items || []); setAsks(r.asks || []);
       if (r.context && typeof r.context === "object") setCtx(r.context);
-      seq.current = r.list.seq; setError(""); setLoaded(true);
-    } catch (e) { setError(msg(e)); setLoaded(true); }
+      seq.current = r.list.seq; setError(""); setAway(false); setLoaded(true);
+    } catch (e) { if (offline(e)) setAway(true); else setError(msg(e)); setLoaded(true); }
   }, [base, info.name]);
+  const reloadUnsent = useCallback(() => pending(base, info.name).then(setUnsent), [base, info.name]);
+  // Send what this phone kept while the computer didn't answer, oldest first.
+  const sendWaiting = useCallback(async () => {
+    // Sent already, by the lists' check or the background task: still read the outbox again, or
+    // the marks stay (and an add shows twice: the item caught up, and its unsent copy).
+    if (!(await pending(base)).length) { reloadUnsent(); return; }
+    const f = await flush(base);
+    for (const x of f.sent) if (x.list === info.name) upsert(x.item);
+    if (Object.keys(f.ids).length) setSel((cur) => (cur && f.ids[cur] ? f.ids[cur] : cur));
+    if (f.failed.length) Alert.alert("Not everything was accepted", f.failed.join("\n\n"));
+    else if (f.sent.length && !f.left) toast("Sent what was waiting");
+    reloadUnsent();
+  }, [base, info.name, reloadUnsent]);
+  // Catch up from where the copy is: each event carries the whole item, so it replaces by id. A
+  // reset, or a seq that moved with no item (the context, an ask), reads the list whole.
+  const catchUp = useCallback(async () => {
+    try {
+      const ch = await api.changes(base, info.name, seq.current);
+      setAway(false);
+      if (ch.reset || (typeof ch.seq === "number" && ch.seq !== seq.current && !(ch.events || []).length)) await load();
+      else {
+        if (ch.events && ch.events.length) setItems((xs) => applyChanges(xs, ch.events));
+        if (typeof ch.seq === "number") seq.current = ch.seq;
+        setError("");
+      }
+      sendWaiting();
+    } catch (e) { if (offline(e)) setAway(true); else setError(msg(e)); }
+  }, [base, info.name, load, sendWaiting]);
+  // Keep the copy current: whatever the service last said (never the unsent writes).
   useEffect(() => {
-    load();
+    if (!loaded) return;
+    store.setCopy(base, info.name, { list, items, asks, context: ctx, seq: seq.current, at: new Date().toISOString() });
+  }, [loaded, list, items, asks, ctx, base, info.name]);
+  useEffect(() => {
+    // The copy first, at once; then only what changed since.
+    (async () => {
+      const c = await store.copy(base, info.name);
+      if (c) {
+        setList(c.list); setItems(c.items); setAsks(c.asks || []); if (c.context) setCtx(c.context);
+        seq.current = c.seq; setLoaded(true);
+        catchUp();
+      } else load();
+    })();
+    reloadUnsent();
     store.me().then((m) => setMe(m[base] || ""));
     // Who the computer says this phone is, and whether it may change the list.
     api.whoami(base).then(async (w) => {
@@ -270,26 +346,34 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
       if (w.name) { setMe(w.name); const m = await store.me(); m[base] = w.name; await store.setMe(m); }
       setReadOnly(w.can_write === false);
     }).catch(() => {});
-  }, [load, base]);
+  }, [base]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stay current while on screen: the change feed every 5 s.
   useEffect(() => {
-    const t = setInterval(async () => {
-      if (AppState.currentState !== "active") return;
-      try {
-        const ch = await api.changes(base, info.name, seq.current);
-        if (ch.reset) { load(); return; }
-        // The list moved but no item did: the household's context changed. Reload it.
-        if (typeof ch.seq === "number" && ch.seq !== seq.current && !(ch.events || []).length) { load(); return; }
-        if (ch.events && ch.events.length) setItems((xs) => applyChanges(xs, ch.events));
-        if (typeof ch.seq === "number") seq.current = ch.seq;
-        setError("");
-      } catch (e) { setError(msg(e)); }
-    }, 5000);
+    const t = setInterval(() => { if (AppState.currentState === "active") catchUp(); }, 5000);
     return () => clearInterval(t);
-  }, [base, info.name, load]);
+  }, [catchUp]);
 
-  const upsert = (it: Item) => setItems((xs) => applyChanges(xs, [{ seq: Number.MAX_SAFE_INTEGER, at: "", by: "", op: "update", item: it }]));
+  // An add, an update or a note: sent now, or kept in the outbox while the computer doesn't answer
+  // (or while older writes still wait, so they arrive in the order they were made).
+  const write = async (op: NewOp, ok?: string): Promise<boolean> => {
+    const queued = (await pending(base)).length > 0 || (op.kind !== "add" && isUnsentId(op.item));
+    if (!queued) {
+      try { const it = await sendOp(base, info.name, op); upsert(it); if (ok) toast(ok); return true; }
+      catch (e) {
+        if (!offline(e)) {
+          if (e instanceof ApiError && e.status === 403) setReadOnly(true);
+          Alert.alert("Couldn't do that", msg(e)); return false;
+        }
+        setAway(true);
+      }
+    }
+    await enqueue(base, info.name, op);
+    await reloadUnsent();
+    toast("Kept on this phone. It's sent when the computer answers");
+    if (queued) sendWaiting();
+    return true;
+  };
   const guard = async (f: () => Promise<Item | void>, ok?: string) => {
     try { const it = await f(); if (it) upsert(it); if (ok) toast(ok); return true; }
     catch (e) {
@@ -301,21 +385,21 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
     const t = draft.trim();
     if (!t) return;
     setDraft("");
-    const ok = await guard(async () => {
-      return api.add(base, info.name, { title: t, state: "open" });
-    });
+    const ok = await write({ kind: "add", body: { title: t, state: "open" } });
     if (!ok) setDraft(t);
   };
-  const toggleDone = (it: Item) => guard(() => api.patch(base, info.name, it.id, { state: it.state === "done" ? "open" : "done" }), it.state === "done" ? "Back on the list" : "Done");
+  const toggleDone = (it: Item) => write({ kind: "patch", item: it.id, body: { state: it.state === "done" ? "open" : "done" } }, it.state === "done" ? "Back on the list" : "Done");
+  // What's shown: the service's items with this phone's unsent writes on top.
+  const shownItems = useMemo(() => withOutbox(items, unsent, me), [items, unsent, me]);
 
   // Sort and group: each device remembers its own choice.
   const [view, setView] = useState<{ sort: SortBy; group: GroupBy }>({ sort: "due", group: "state" });
   const [viewOpen, setViewOpen] = useState(false);
   useEffect(() => { store.view().then((v) => { if (v) setView(v); }); }, []);
   const pickView = (v: { sort: SortBy; group: GroupBy }) => { setView(v); store.setView(v); };
-  const sec = useMemo(() => arrange(items, list.session, view.sort, view.group), [items, list.session, view]);
+  const sec = useMemo(() => arrange(shownItems, list.session, view.sort, view.group), [shownItems, list.session, view]);
   const now = new Date();
-  const selected = items.find((x) => x.id === sel) || null;
+  const selected = shownItems.find((x) => x.id === sel) || null;
   useBack(() => { if (!selected && !aboutOpen) onBack(); });
 
   const Row = ({ it }: { it: Item }) => {
@@ -332,6 +416,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
           <Text style={[s.body, done && { color: C.faint, textDecorationLine: "line-through" }]}>{it.title}</Text>
           {(() => {
             const bits = [
+              it.unsent ? "not sent yet" : "",
               it.due ? dueLabel(it.due, now) : "",
               it.who || "",
               ...(it.tags || []).map((t) => "#" + t),
@@ -359,8 +444,8 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   // keyboard covers without resizing, hiding the reply box.
   if (aboutOpen) return <AboutUs base={base} list={list} ctx={ctx} me={me} readOnly={readOnly}
     onClose={() => setAboutOpen(false)} onSaved={(c) => setCtx(c)} onReadOnly={() => setReadOnly(true)} />;
-  if (selected) return <ItemSheet base={base} list={list} item={selected} me={me} readOnly={readOnly} items={items} helpers={ctx?.helpers || []}
-    onClose={() => setSel(null)} onChanged={upsert} onReadOnly={() => setReadOnly(true)} />;
+  if (selected) return <ItemSheet base={base} list={list} item={selected} me={me} readOnly={readOnly} items={shownItems} helpers={ctx?.helpers || []}
+    onClose={() => setSel(null)} onChanged={upsert} onWrite={write} onReadOnly={() => setReadOnly(true)} />;
 
   return (
     <View style={{ flex: 1 }}>
@@ -385,6 +470,8 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
       )}
       <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 14 }} refreshControl={<RefreshControl refreshing={false} onRefresh={load} colors={[C.accent]} progressBackgroundColor={C.card} />} keyboardShouldPersistTaps="handled">
         {!!error && <Text style={[s.sub, { color: C.rust }]}>{error}</Text>}
+        {away && <Text style={s.hint}>The computer with this list isn't answering. This is what the phone last saw; changes are kept here and sent when it answers.</Text>}
+        {unsent.length > 0 && !away && <Text style={[s.hint, { color: C.warn }]}>{unsent.length === 1 ? "1 change" : `${unsent.length} changes`} not sent yet. Sending…</Text>}
         {readOnly && <Text style={s.hint}>This phone can look at the list but not change it.</Text>}
         {asks.map((a) => (
           <View key={a.from} style={[s.card, { backgroundColor: C.accentSoft }]}>
@@ -670,9 +757,9 @@ const STATES: { s: State; label: string }[] = [
   { s: "open", label: "To do" }, { s: "waiting", label: "Waiting" }, { s: "done", label: "Done" }, { s: "dropped", label: "Not doing" },
 ];
 
-function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, onChanged, onReadOnly }: {
+function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, onChanged, onWrite, onReadOnly }: {
   base: string; list: ListInfo; item: Item; me: string; readOnly: boolean; items: Item[]; helpers: Helper[];
-  onClose: () => void; onChanged: (it: Item) => void; onReadOnly: () => void;
+  onClose: () => void; onChanged: (it: Item) => void; onWrite: (op: NewOp, ok?: string) => Promise<boolean>; onReadOnly: () => void;
 }) {
   const [title, setTitle] = useState(item.title);
   const [notes, setNotes] = useState(item.notes || "");
@@ -705,7 +792,14 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
     catch (e) { if (e instanceof ApiError && e.status === 403) onReadOnly(); Alert.alert("Couldn't do that", msg(e)); return false; }
     finally { setBusy(false); }
   };
-  const patch = (p: Parameters<typeof api.patch>[3], ok?: string) => run(() => api.patch(base, list.name, item.id, p), ok);
+  // Changes and notes go through the list's outbox: sent now, or kept until the computer answers.
+  const write = async (op: NewOp, ok?: string) => {
+    if (busy) return false;
+    setBusy(true);
+    try { return await onWrite(op, ok); } finally { setBusy(false); }
+  };
+  const patch = (p: Parameters<typeof api.patch>[3], ok?: string) => write({ kind: "patch", item: item.id, body: p }, ok);
+  const notSent = isUnsentId(item.id);   // added on this phone and not sent yet: the assistant can't see it
   const tagList = (t: string) => t.split(",").map((x) => x.trim().replace(/^#/, "")).filter(Boolean);
   const dirty = title.trim() !== item.title || notes.trim() !== (item.notes || "") || who.trim() !== (item.who || "")
     || tagList(tags).join(",") !== (item.tags || []).join(",");
@@ -719,7 +813,7 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
     await patch(p, "Saved");
   };
   const setDue = (d: string) => patch({ due: d }, d ? "Date set" : "Date removed");
-  const send = async () => { const t = reply.trim(); if (!t) return; if (await run(() => api.comment(base, list.name, item.id, t))) setReply(""); };
+  const send = async () => { const t = reply.trim(); if (!t) return; if (await write({ kind: "comment", item: item.id, text: t })) setReply(""); };
   const close = () => {
     if (reply.trim()) toast("Your note is kept here until you send it");
     if (dirty) Alert.alert("Save your changes?", "", [{ text: "Discard", style: "destructive", onPress: onClose }, { text: "Save", onPress: async () => { await save(); onClose(); } }]);
@@ -742,7 +836,7 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
         <ScrollView ref={scroller} contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
           <TextInput style={s.titleInput} value={title} onChangeText={setTitle} editable={!readOnly} multiline />
           <SummaryBox item={item} list={list} me={me} readOnly={readOnly}
-            save={(text) => run(() => api.patch(base, list.name, item.id, { summary: text }), text ? "Summary saved" : "Summary removed")} />
+            save={(text) => patch({ summary: text }, text ? "Summary saved" : "Summary removed")} />
           <View style={s.chips}>
             {STATES.map((x) => (
               <Pressable key={x.s} onPress={() => !readOnly && item.state !== x.s && patch({ state: x.s })}
@@ -797,7 +891,8 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
               {!!h.answer && <CopyLink text={h.answer} />}
             </View>
           ))}
-          {!readOnly && !!list.session && (
+          {!readOnly && !!list.session && notSent && <Text style={s.hint}>Not sent yet: the assistant can help once the computer has it.</Text>}
+          {!readOnly && !!list.session && !notSent && (
             <View style={{ gap: 8 }}>
               <Text style={s.label}>Ask the assistant to help</Text>
               <View style={s.chips}>{HELP_KINDS.map((k) => (
@@ -832,7 +927,7 @@ function ItemSheet({ base, list, item, me, readOnly, items, helpers, onClose, on
             const bot = !!list.session && (c.by === list.session || c.by.endsWith("/" + list.session));
             return (
               <View key={i} style={[s.bubble, mine ? s.bubbleMine : bot ? s.bubbleBot : null]}>
-                <Text style={[s.bubbleWho, bot && { color: C.violet }]}>{cap(whoLabel(c.by, list.session, me))}</Text>
+                <Text style={[s.bubbleWho, bot && { color: C.violet }]}>{cap(whoLabel(c.by, list.session, me))}{c.unsent ? " · not sent yet" : ""}</Text>
                 {/* Agents write markdown; people's own notes are shown as typed. */}
                 {mine || (!bot && !c.by.includes("/")) ? <Text style={s.body} selectable>{c.text}</Text> : <><Markdown text={c.text} /><CopyLink text={c.text} /></>}
               </View>
