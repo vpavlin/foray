@@ -13,7 +13,7 @@ import { parseMarkdown, stripMarkdown, previewLine, Inline, Block } from "./src/
 import { api, ApiError } from "./src/api";
 import { store, Machine } from "./src/store";
 import { checkAll, findLists, Found } from "./src/poll";
-import { enqueue, flush, offline, pending, sendOp } from "./src/outbox";
+import { enqueue, flush, makeOp, offline, pending, sendOp } from "./src/outbox";
 import { registerBackground } from "./src/background";
 import { findAgents } from "./src/agents";
 import { Item, ListInfo, ListContext, State, applyChanges, dueBucket, dueLabel, whoLabel, hasContext, isQuestion, validAgent, trustProblems, Helper, arrange, SORTS, GROUPS, SortBy, GroupBy, HELP_KINDS, baseUrl, itemRef, parseForayLink, NewOp, OutOp, withOutbox, mergeFound, isUnsentId } from "./src/model";
@@ -357,9 +357,12 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
   // An add, an update or a note: sent now, or kept in the outbox while the computer doesn't answer
   // (or while older writes still wait, so they arrive in the order they were made).
   const write = async (op: NewOp, ok?: string): Promise<boolean> => {
+    // The id is made first: the first try already carries it as its Idempotency-Key, and a write that
+    // can't reach the computer waits under that same id, so a resend after a lost answer counts once.
+    const out = makeOp(base, info.name, op);
     const queued = (await pending(base)).length > 0 || (op.kind !== "add" && isUnsentId(op.item));
     if (!queued) {
-      try { const it = await sendOp(base, info.name, op); upsert(it); if (ok) toast(ok); return true; }
+      try { const it = await sendOp(base, info.name, out); upsert(it); if (ok) toast(ok); return true; }
       catch (e) {
         if (!offline(e)) {
           if (e instanceof ApiError && e.status === 403) setReadOnly(true);
@@ -368,7 +371,7 @@ function ListScreen({ base, info, initialItem, onBack }: { base: string; info: L
         setAway(true);
       }
     }
-    await enqueue(base, info.name, op);
+    await enqueue(out);
     await reloadUnsent();
     toast("Kept on this phone. It's sent when the computer answers");
     if (queued) sendWaiting();

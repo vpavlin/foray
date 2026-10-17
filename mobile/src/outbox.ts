@@ -4,20 +4,26 @@ import { api, ApiError } from "./api";
 import { store } from "./store";
 import { Item, NewOp, OutOp, UNSENT_PREFIX, isUnsentId, remapOps } from "./model";
 
-/** Send one write now. An unsent item's id can't be sent: the caller queues those. */
-export function sendOp(base: string, list: string, op: NewOp): Promise<Item> {
-  if (op.kind === "add") return api.add(base, list, op.body);
-  if (op.kind === "patch") return api.patch(base, list, op.item, op.body);
-  return api.comment(base, list, op.item, op.text);
+/** Send one write, with its outbox id as the Idempotency-Key: if the answer to a first try was lost
+ *  and the write goes out again from the outbox, the service applies it once (design §7.1).
+ *  An unsent item's id can't be sent: the caller queues those. */
+export function sendOp(base: string, list: string, op: OutOp): Promise<Item> {
+  if (op.kind === "add") return api.add(base, list, op.body, op.id);
+  if (op.kind === "patch") return api.patch(base, list, op.item, op.body, op.id);
+  return api.comment(base, list, op.item, op.text, op.id);
 }
 
 /** "Can't reach it": keep the write and try later. Anything else is the service's answer. */
 export const offline = (e: unknown) => e instanceof ApiError && e.status === 0;
 
 let n = 0;
-export async function enqueue(base: string, list: string, op: NewOp): Promise<OutOp> {
-  const at = new Date().toISOString();
-  const out = { ...op, id: `${UNSENT_PREFIX}${Date.now().toString(36)}-${(n++).toString(36)}`, at, base, list } as OutOp;
+/** A write with its id, made before the first try: that id is its Idempotency-Key, sent or queued. */
+export function makeOp(base: string, list: string, op: NewOp): OutOp {
+  const id = `${UNSENT_PREFIX}${Date.now().toString(36)}-${(n++).toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return { ...op, id, at: new Date().toISOString(), base, list } as OutOp;
+}
+/** Keep a write (under the id it was already tried with) until its computer answers. */
+export async function enqueue(out: OutOp): Promise<OutOp> {
   await store.updateOutbox((ops) => [...ops, out]);
   return out;
 }

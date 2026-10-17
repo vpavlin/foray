@@ -7,14 +7,16 @@ export class ApiError extends Error {
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
 
-async function req<T>(base: string, path: string, init: { method?: string; body?: unknown } = {}, timeoutMs = 8000): Promise<T> {
+// `key` is an Idempotency-Key: a write sent again with the same key (its first answer was lost) is
+// applied once, and the service answers the repeat with the first answer.
+async function req<T>(base: string, path: string, init: { method?: string; body?: unknown; key?: string } = {}, timeoutMs = 8000): Promise<T> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(base + path, {
       method: init.method || "GET",
-      headers: init.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      headers: { ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}), ...(init.key ? { "Idempotency-Key": init.key } : {}) },
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       signal: ctl.signal,
     });
@@ -42,11 +44,12 @@ export const api = {
     req<ListContext>(b, `/v1/lists/${enc(l)}/context`, { method: "PUT", body: c }),
   list: (b: string, l: string) => req<{ list: ListInfo; items: Item[]; context?: ListContext; asks?: { from: string; title: string; at: string }[]; suggest_from?: string[] }>(b, `/v1/lists/${enc(l)}`),
   changes: (b: string, l: string, since: number) => req<{ seq: number; events: Change[]; reset?: boolean }>(b, `/v1/lists/${enc(l)}/changes?since=${since}`),
-  add: (b: string, l: string, body: { title: string; notes?: string; due?: string; who?: string; tags?: string[]; state?: string }) =>
-    req<Item>(b, `/v1/lists/${enc(l)}/items`, { method: "POST", body }),
-  patch: (b: string, l: string, id: string, body: Partial<Pick<Item, "title" | "notes" | "state" | "due" | "who" | "tags" | "summary">>) =>
-    req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}`, { method: "PATCH", body }),
-  comment: (b: string, l: string, id: string, text: string) => req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}/comments`, { method: "POST", body: { text } }),
+  add: (b: string, l: string, body: { title: string; notes?: string; due?: string; who?: string; tags?: string[]; state?: string }, key?: string) =>
+    req<Item>(b, `/v1/lists/${enc(l)}/items`, { method: "POST", body, key }),
+  patch: (b: string, l: string, id: string, body: Partial<Pick<Item, "title" | "notes" | "state" | "due" | "who" | "tags" | "summary">>, key?: string) =>
+    req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}`, { method: "PATCH", body, key }),
+  comment: (b: string, l: string, id: string, text: string, key?: string) =>
+    req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}/comments`, { method: "POST", body: { text }, key }),
   ask: (b: string, l: string, id: string, kind: string, text?: string, to?: string) =>
     req<Item>(b, `/v1/lists/${enc(l)}/items/${enc(id)}/ask`, { method: "POST", body: to ? { kind, text, to } : { kind, text } }),
   // shrooms-agent on a machine (port 7387): its mesh peers, and its sessions.
