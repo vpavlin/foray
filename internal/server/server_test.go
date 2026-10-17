@@ -396,3 +396,34 @@ func TestAnItemHasItsOwnAddress(t *testing.T) {
 		t.Fatalf("another mesh read the item: %d", code)
 	}
 }
+
+// A write sent again with the same Idempotency-Key — its answer was lost —
+// is applied once and answered as the first was; another writer's same key,
+// or no key, is a write of its own (design §7.1).
+func TestAWriteSentTwiceIsAppliedOnce(t *testing.T) {
+	f := newFixture(t)
+	key := map[string]string{"Idempotency-Key": "unsent-abc-1"}
+	code, first := f.call(t, f.home, "POST", "/v1/lists/home/items", map[string]any{"title": "Milk"}, key)
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("first: %d %v", code, first)
+	}
+	code2, again := f.call(t, f.home, "POST", "/v1/lists/home/items", map[string]any{"title": "Milk"}, key)
+	if code2 != code || again["id"] != first["id"] {
+		t.Fatalf("again: %d %v, first %d %v", code2, again, code, first)
+	}
+	count := func() int {
+		_, l := f.call(t, f.home, "GET", "/v1/lists/home", nil, nil)
+		return len(l["items"].([]any))
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("%d items after a repeat, want 1", n)
+	}
+	f.mu.Lock()
+	f.callerOf = "laptop.home"
+	f.mu.Unlock()
+	f.call(t, f.home, "POST", "/v1/lists/home/items", map[string]any{"title": "Milk"}, key)
+	f.call(t, f.home, "POST", "/v1/lists/home/items", map[string]any{"title": "Milk"}, nil)
+	if n := count(); n != 3 {
+		t.Fatalf("%d items, want 3: another writer's key and no key are writes of their own", n)
+	}
+}

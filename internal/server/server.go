@@ -77,6 +77,9 @@ type Server struct {
 	// mesh — takes tasks from caged agents (shrooms-agent's accept_caged).
 	// Set by main; nil leaves helpers' settings alone.
 	Trust func(mesh, agent string, on bool) error
+
+	// applied is the writes answered, by Idempotency-Key (once.go).
+	applied onceCache
 }
 
 // New opens every configured list.
@@ -189,7 +192,7 @@ func (s *Server) withWriter(h listHandler) http.HandlerFunc {
 			fail(w, http.StatusForbidden, errors.New("the mesh does not know who you are"))
 			return
 		}
-		h(w, r, l, by)
+		s.once(w, r, l, by, h)
 	})
 }
 

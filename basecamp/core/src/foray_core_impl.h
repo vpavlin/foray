@@ -43,6 +43,14 @@ public:
                      const std::string& path, const std::string& body);
 
     /**
+     * @brief send(), with an Idempotency-Key: a write the view sends again
+     * from its outbox is applied once by the service (design 7.1). The key
+     * is letters, digits, "-", "_" and "." up to 128.
+     */
+    std::string sendOnce(const std::string& address, const std::string& method,
+                         const std::string& path, const std::string& body, const std::string& key);
+
+    /**
      * @brief Opens an http(s) link in the desktop's browser, or a basecamp://
      * link through Basecamp's handler: {"ok":true} or
      * {"error"}. A view cannot: Basecamp's sandbox turns Qt.openUrlExternally

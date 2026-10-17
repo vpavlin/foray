@@ -84,13 +84,20 @@ Item {
         for (var i = 0; i < outbox.length; i++) if (current !== null && outbox[i].key === current.key) n++
         return n
     }
+    // A write, with its key: sent again it is applied once (design 7.1).
+    // A core from before sendOnce (0.3.1) has no such method; plain send then.
+    function newKey() { return "bc-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 1e9).toString(36) }
+    function sendKeyed(address, method, path, body, key) {
+        var d = call("foray_core", "sendOnce", [address, method, path, body, key])
+        return d !== null ? d : call("foray_core", "send", [address, method, path, body])
+    }
     // Oldest first; stops at the first that still finds no one.
     function flushOutbox() {
         if (outbox.length === 0) return
         var left = outbox.slice(), sent = false
         while (left.length > 0) {
             var w = left[0]
-            var d = call("foray_core", "send", [w.address, w.method, w.path, w.body])
+            var d = sendKeyed(w.address, w.method, w.path, w.body, w.id || newKey())
             if (unreachable(d)) break
             left.shift()
             sent = true
@@ -233,11 +240,13 @@ Item {
         keepCurrent()
     }
     function write(method, sub, body) {
-        var d = call("foray_core", "send", [current.address, method, listPath(sub), JSON.stringify(body)])
-        // The list's machine did not answer: kept, and sent when it does.
+        var id = newKey()
+        var d = sendKeyed(current.address, method, listPath(sub), JSON.stringify(body), id)
+        // The list's machine did not answer: kept, and sent when it does,
+        // with the same key: it may have been applied, only its answer lost.
         if (unreachable(d) && method !== "PUT") {
             var o = root.outbox.slice()
-            o.push({ key: current.key, address: current.address, method: method, path: listPath(sub), body: JSON.stringify(body) })
+            o.push({ id: id, key: current.key, address: current.address, method: method, path: listPath(sub), body: JSON.stringify(body) })
             root.outbox = o
             saveOutbox()
             root.said = ""

@@ -10,10 +10,12 @@ Item {
     readonly property var demoQr: ["1111111010111111", "1000001001100001", "1011101110101101", "1011101001001101", "1000001011000001", "1111111010111111"]
     property string outDir: Qt.application.arguments[Qt.application.arguments.length - 1]
 
-    function http(method, path, body) {
+    property var keys: []
+    function http(method, path, body, key) {
         var x = new XMLHttpRequest()
         x.open(method, base + path, false)
         if (body) x.setRequestHeader("Content-Type", "application/json")
+        if (key) x.setRequestHeader("Idempotency-Key", key)
         x.send(body || null)
         return x.responseText || "{}"
     }
@@ -31,6 +33,7 @@ Item {
                 return JSON.stringify([{ address: "fd00::1", peer: "laptop", mesh: "home", reply: JSON.parse(top.http("GET", "/v1/lists")) }])
             if (method === "get") return top.down ? top.refused : top.http("GET", args[1])
             if (method === "send") return top.down ? top.refused : top.http(args[1], args[2], args[3])
+            if (method === "sendOnce") { top.keys.push(args[4]); return top.down ? top.refused : top.http(args[1], args[2], args[3], args[4]) }
             if (method === "getPref") return top.prefs[args[0]] || ""
             if (method === "setPref") { top.prefs[args[0]] = args[1]; return JSON.stringify({ ok: true }) }
             return JSON.stringify({ ok: true })
@@ -64,6 +67,11 @@ Item {
         console.error("REFUSED kept=" + view.outbox.length + " said=" + (view.said !== ""))
         // It answers again: sent, oldest first, and the list read.
         view.pollChanges()
+        // The resend carried the key the first try had; sent once more with
+        // it (its answer lost), the service applies it once.
+        var k = top.keys.filter(function (x, i) { return top.keys.indexOf(x) !== i })
+        top.http("POST", "/v1/lists/home/items", JSON.stringify({ title: "Offline milk" }), k[0])
+        console.error("ONCE resentWithSameKey=" + (k.length > 0) + " service=" + top.count("Offline milk"))
         console.error("SENT service=" + top.count("Offline milk") + " left=" + view.outbox.length + " shown=" + view.items.filter(function (i) { return i.title === "Offline milk" }).length)
         Qt.quit()
     }

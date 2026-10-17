@@ -144,7 +144,8 @@ std::string unchunk(const std::string& in)
 
 // One request; the body of a 2xx, or false with the service's own words.
 bool request(const std::string& address, const std::string& method, const std::string& path,
-             const std::string& body, int timeoutSec, std::string& out, std::string& err)
+             const std::string& body, int timeoutSec, std::string& out, std::string& err,
+             const std::string& idempotencyKey = "")
 {
     if (!isMeshAddress(address)) {
         err = address + " is not a mesh address";
@@ -162,6 +163,7 @@ bool request(const std::string& address, const std::string& method, const std::s
     if (method != "GET") {
         req += "Content-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) + "\r\n";
     }
+    if (!idempotencyKey.empty()) req += "Idempotency-Key: " + idempotencyKey + "\r\n";
     req += "\r\n" + body;
     size_t sent = 0;
     while (sent < req.size()) {
@@ -326,6 +328,19 @@ std::string ForayCoreImpl::send(const std::string& address, const std::string& m
     if (method != "POST" && method != "PATCH" && method != "PUT") return errorJson("POST, PATCH or PUT");
     std::string out, err;
     if (!request(address, method, path, body, 6, out, err)) return errorJson(err);
+    return out;
+}
+
+std::string ForayCoreImpl::sendOnce(const std::string& address, const std::string& method,
+                                    const std::string& path, const std::string& body, const std::string& key)
+{
+    if (method != "POST" && method != "PATCH" && method != "PUT") return errorJson("POST, PATCH or PUT");
+    if (key.empty() || key.size() > 128) return errorJson("not an idempotency key");
+    for (unsigned char c : key) {
+        if (!std::isalnum(c) && c != '_' && c != '-' && c != '.') return errorJson("not an idempotency key");
+    }
+    std::string out, err;
+    if (!request(address, method, path, body, 6, out, err, key)) return errorJson(err);
     return out;
 }
 
