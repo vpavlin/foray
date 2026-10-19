@@ -141,7 +141,7 @@ func serve(args []string) error {
 		return a, ok
 	}
 	srv.Notify = server.AgentNotifier(srv.Addr, cfg.AgentPort, log)
-	srv.Trust = server.AgentTrust(names.Find, cfg.AgentPort)
+	srv.Trust = server.AgentTrust(names.Find, srv.Addr, cfg.AgentPort)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

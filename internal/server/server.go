@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -655,18 +657,35 @@ func (s *Server) dropAsk(l *list, from string) {
 	l.asks = kept
 }
 
-// AgentNotifier posts to the list's session on shrooms-agent, at this
-// machine's address on the list's mesh.
+// AgentSocket is this machine's shrooms-agent's own socket, as it chooses
+// it: the agent takes a request from this machine only there, not on its
+// own mesh address, which any local user could reach (shrooms audit F-24).
+func AgentSocket() string {
+	if p := os.Getenv("SHROOMS_AGENT_SOCKET"); p != "" {
+		return p
+	}
+	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
+		return filepath.Join(d, "shrooms-agent", "agent.sock")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "state", "shrooms-agent", "agent.sock")
+}
+
+// selfClient reaches this machine's agent through its socket.
+func selfClient(timeout time.Duration) *http.Client {
+	sock := AgentSocket()
+	return &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+	}}}
+}
+
+// AgentNotifier posts to the list's session on this machine's shrooms-agent,
+// through the agent's socket.
 func AgentNotifier(addr func(mesh string) (netip.Addr, bool), port int, log *slog.Logger) func(ListConfig, string) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := selfClient(30 * time.Second)
 	return func(l ListConfig, text string) {
-		a, ok := addr(l.Mesh)
-		if !ok {
-			log.Warn("not on the list's mesh; its session was not told", "list", l.Name, "mesh", l.Mesh)
-			return
-		}
 		body, _ := json.Marshal(map[string]string{"text": text})
-		u := fmt.Sprintf("http://%s/v1/sessions/%s/messages", netip.AddrPortFrom(a, uint16(port)), l.Session)
+		u := fmt.Sprintf("http://agent/v1/sessions/%s/messages", url.PathEscape(l.Session))
 		resp, err := client.Post(u, "application/json", bytes.NewReader(body))
 		if err != nil {
 			log.Warn("could not tell the list's session", "list", l.Name, "session", l.Session, "err", err)
@@ -682,8 +701,9 @@ func AgentNotifier(addr func(mesh string) (netip.Addr, bool), port int, log *slo
 
 // AgentTrust sets a helper's accept_caged through its machine's
 // shrooms-agent, found on the list's mesh: find is the mesh's names.
-func AgentTrust(find func(machine, mesh string) (netip.Addr, bool), port int) func(mesh, agent string, on bool) error {
-	client := &http.Client{Timeout: 15 * time.Second}
+func AgentTrust(find func(machine, mesh string) (netip.Addr, bool), self func(mesh string) (netip.Addr, bool), port int) func(mesh, agent string, on bool) error {
+	remote := &http.Client{Timeout: 15 * time.Second}
+	local := selfClient(15 * time.Second)
 	return func(mesh, agent string, on bool) error {
 		machine, session, _ := strings.Cut(agent, "/")
 		a, ok := find(machine, mesh)
@@ -691,7 +711,14 @@ func AgentTrust(find func(machine, mesh string) (netip.Addr, bool), port int) fu
 			return fmt.Errorf("%s is not on this list's mesh", machine)
 		}
 		body, _ := json.Marshal(map[string]bool{"accept_caged": on})
+		client := remote
 		u := fmt.Sprintf("http://%s/v1/sessions/%s", netip.AddrPortFrom(a, uint16(port)), url.PathEscape(session))
+		// This machine's own agent through its socket: it refuses its own
+		// mesh address (shrooms audit F-24).
+		if me, ok := self(mesh); ok && me == a {
+			client = local
+			u = "http://agent/v1/sessions/" + url.PathEscape(session)
+		}
 		req, _ := http.NewRequest("PATCH", u, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
