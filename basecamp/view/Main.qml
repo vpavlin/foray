@@ -175,6 +175,37 @@ Item {
         }
     }
 
+    // --- starting a list ----------------------------------------------------------
+    // A list is made by a machine that already keeps lists on a mesh, on that
+    // mesh (POST /v1/lists): the view knows those from the lists it found.
+    property bool makingList: false
+    property int keeperPick: 0
+    function keepers() {
+        var seen = {}, out = []
+        for (var i = 0; i < lists.length; i++) {
+            var k = lists[i].address + "|" + lists[i].mesh
+            if (seen[k]) continue
+            seen[k] = true
+            out.push({ address: lists[i].address, mesh: lists[i].mesh, machine: lists[i].machine })
+        }
+        return out
+    }
+    function makeList(title) {
+        var ks = keepers()
+        if (ks.length === 0 || String(title).trim() === "") return
+        var k = ks[Math.min(root.keeperPick, ks.length - 1)]
+        var d = call("foray_core", "send", [k.address, "POST", "/v1/lists", JSON.stringify({ title: String(title).trim() })])
+        if (!d || d.error) { root.said = d ? d.error : "no answer"; return }
+        root.said = ""
+        root.makingList = false
+        newListTitle.text = ""
+        var made = { key: k.address + "/" + d.name, address: k.address, machine: k.machine, mesh: d.mesh || k.mesh,
+                     name: d.name, title: d.title || d.name, session: d.session || "", counts: {} }
+        root.lists = root.lists.concat([made])
+        openList(made)
+        findLists()
+    }
+
     // --- the open list --------------------------------------------------------------
     property var current: null      // an entry of lists
     property var items: []
@@ -552,6 +583,58 @@ Item {
                         }
                     }
                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.openList(modelData) }
+                }
+            }
+            Text {
+                visible: root.lists.length > 0 && !root.makingList
+                text: "+ new list"
+                color: cSky; font.pixelSize: 12
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.keeperPick = 0; root.makingList = true; newListTitle.forceActiveFocus() } }
+            }
+            ColumnLayout {
+                visible: root.makingList
+                Layout.fillWidth: true
+                spacing: 6
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 36; radius: 8
+                    color: cPanel; border.color: newListTitle.activeFocus ? cPhosphor : cLine
+                    TextInput {
+                        id: newListTitle
+                        objectName: "newListTitle"
+                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                        color: cBone; font.pixelSize: 14; clip: true
+                        verticalAlignment: TextInput.AlignVCenter
+                        onAccepted: root.makeList(text)
+                        Text { visible: !parent.text; text: "Name of the new list"; color: cAsh; font.pixelSize: 14; anchors.verticalCenter: parent.verticalCenter }
+                    }
+                }
+                // Where it lives, when lists come from more than one place.
+                Repeater {
+                    model: root.makingList && root.keepers().length > 1 ? root.keepers() : []
+                    delegate: Text {
+                        text: (index === root.keeperPick ? "● " : "○ ") + modelData.mesh + " · " + modelData.machine
+                        color: index === root.keeperPick ? cBone : cAsh; font.pixelSize: 11
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.keeperPick = index }
+                    }
+                }
+                RowLayout {
+                    Text {
+                        text: "create"
+                        color: newListTitle.text.trim() !== "" ? cPhosphor : cAsh; font.pixelSize: 12
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.makeList(newListTitle.text) }
+                    }
+                    Text {
+                        text: "cancel"
+                        color: cAsh; font.pixelSize: 12
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.makingList = false; newListTitle.text = "" } }
+                    }
+                }
+                Text { visible: root.said !== ""; text: root.said; color: cRust; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                Text {
+                    text: "Everyone on " + (root.keepers().length ? root.keepers()[Math.min(root.keeperPick, root.keepers().length - 1)].mesh : "the mesh") + " will see it. An assistant for it is set up on its machine."
+                    color: cAsh; font.pixelSize: 10; wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
                 }
             }
             Item { Layout.fillHeight: true }

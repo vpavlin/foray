@@ -176,6 +176,9 @@ func serve(args []string) error {
 	meshSrv := map[string]onMesh{}
 	warned := map[string]bool{}
 	listen := func(addrs map[string]netip.Addr) (missing bool) {
+		// The lists' meshes as they are now: one made through the API may
+		// be on a mesh not served at start.
+		want = srv.Meshes()
 		for m := range want {
 			a, ok := addrs[m]
 			cur, have := meshSrv[m]

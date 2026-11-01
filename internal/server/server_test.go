@@ -427,3 +427,68 @@ func TestAWriteSentTwiceIsAppliedOnce(t *testing.T) {
 		t.Fatalf("%d items, want 3: another writer's key and no key are writes of their own", n)
 	}
 }
+
+// Anybody the mesh knows can start a list there, and it is a list like the
+// others: on that mesh only, saved, and there after a restart.
+func TestAListIsMadeOnTheMeshAskedFrom(t *testing.T) {
+	f := newFixture(t)
+	code, out := f.call(t, f.office, "POST", "/v1/lists", map[string]any{"title": "Weekend trip!"}, nil)
+	if code != http.StatusCreated || out["name"] != "weekend-trip" || out["mesh"] != "office" || out["title"] != "Weekend trip!" {
+		t.Fatalf("create: %d %v", code, out)
+	}
+	if code, _ := f.call(t, f.office, "POST", "/v1/lists/weekend-trip/items", map[string]any{"title": "tent"}, nil); code != http.StatusCreated {
+		t.Fatalf("add to the new list: %d", code)
+	}
+	if code, _ := f.call(t, f.home, "GET", "/v1/lists/weekend-trip", nil, nil); code != http.StatusNotFound {
+		t.Errorf("the home mesh sees the office's new list: %d", code)
+	}
+	cfg, err := LoadConfig(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := New(cfg, f.cfgPath, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, ok := again.lists["weekend-trip"]; !ok || l.conf.Mesh != "office" || len(l.store.Items()) != 1 {
+		t.Errorf("after a restart: %v", ok)
+	}
+	if m := f.s.Meshes(); !m["office"] || !m["home"] {
+		t.Errorf("meshes: %v", m)
+	}
+}
+
+func TestAListNeedsAKnownCallerAFreeNameAndAMesh(t *testing.T) {
+	f := newFixture(t)
+	cases := []struct {
+		ts   *httptest.Server
+		body map[string]any
+		who  string
+		want int
+	}{
+		{f.home, map[string]any{"title": "x"}, "", http.StatusForbidden},                              // the mesh doesn't know you
+		{f.home, map[string]any{"name": "home"}, "phone.home", http.StatusConflict},                   // taken
+		{f.home, map[string]any{"name": "Bad Name"}, "phone.home", http.StatusBadRequest},             // not a name
+		{f.home, map[string]any{"title": "!!!"}, "phone.home", http.StatusBadRequest},                 // nothing to name it by
+		{f.home, map[string]any{"title": "x", "mesh": "office"}, "phone.home", http.StatusBadRequest}, // another mesh
+		{f.local, map[string]any{"title": "x"}, "phone.home", http.StatusBadRequest},                  // loopback must name one
+		{f.local, map[string]any{"title": "x", "mesh": "nowhere"}, "phone.home", http.StatusBadRequest},
+	}
+	for i, c := range cases {
+		f.mu.Lock()
+		f.callerOf = c.who
+		f.mu.Unlock()
+		if code, out := f.call(t, c.ts, "POST", "/v1/lists", c.body, nil); code != c.want {
+			t.Errorf("case %d: %d %v, want %d", i, code, out, c.want)
+		}
+	}
+}
+
+func TestSlug(t *testing.T) {
+	for in, want := range map[string]string{"Weekend trip": "weekend-trip", "  Groceries / Lidl ": "groceries-lidl",
+		"Čeština": "cestina", "Nákup u Žabky": "nakup-u-zabky", strings.Repeat("ab", 40): strings.Repeat("ab", 16)} {
+		if got := slug(in); got != want {
+			t.Errorf("slug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

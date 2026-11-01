@@ -157,6 +157,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/whoami", s.whoami)
 	mux.HandleFunc("GET /v1/lists", s.getLists)
+	mux.HandleFunc("POST /v1/lists", s.createList)
 	mux.HandleFunc("GET /v1/lists/{list}", s.withList(s.getList))
 	mux.HandleFunc("GET /v1/lists/{list}/changes", s.withList(s.changes))
 	mux.HandleFunc("GET /v1/lists/{list}/pair", s.withList(s.pair))
@@ -244,6 +245,126 @@ func (s *Server) getLists(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"lists": out, "machine": s.Self()})
+}
+
+// createList makes a new list, on the mesh the request came from, with no
+// assistant: anybody on a mesh may start a list there, as anybody on it may
+// add to one. An assistant session is the machine's to set up
+// (scripts/setup.sh), since it needs a cage there. From loopback, the mesh
+// is named, and has to be one this machine is on.
+//
+// The apps had no way to start a list at all: lists were made only by
+// setup.sh on the machine that keeps them (Václav, 2026-11-01: "I have no
+// clue how to create a new list").
+func (s *Server) createList(w http.ResponseWriter, r *http.Request) {
+	by := s.caller(r)
+	if by == "" {
+		fail(w, http.StatusForbidden, errors.New("the mesh does not know who you are"))
+		return
+	}
+	var a struct{ Name, Title, Mesh string }
+	if !decode(w, r, &a) {
+		return
+	}
+	wh := whereOf(r)
+	mesh := wh.mesh
+	if wh.local {
+		mesh = strings.TrimSpace(a.Mesh)
+		if mesh == "" {
+			fail(w, http.StatusBadRequest, errors.New("which mesh is the list on?"))
+			return
+		}
+		if _, ok := s.Addr(mesh); !ok {
+			fail(w, http.StatusBadRequest, fmt.Errorf("this machine is not on mesh %q", mesh))
+			return
+		}
+	} else if a.Mesh != "" && a.Mesh != mesh {
+		fail(w, http.StatusBadRequest, errors.New("a list is made on the mesh you ask from"))
+		return
+	}
+	title := strings.TrimSpace(a.Title)
+	name := strings.TrimSpace(a.Name)
+	if name == "" {
+		name = slug(title)
+	}
+	if title == "" {
+		title = name
+	}
+	if !listName.MatchString(name) {
+		fail(w, http.StatusBadRequest, fmt.Errorf("%q: a list's name is lowercase letters, digits, - and _, up to 32", name))
+		return
+	}
+	if len(title) > 80 {
+		fail(w, http.StatusBadRequest, errors.New("a title is up to 80 characters"))
+		return
+	}
+
+	s.mu.Lock()
+	if _, dup := s.lists[name]; dup {
+		s.mu.Unlock()
+		fail(w, http.StatusConflict, fmt.Errorf("there is a list called %q already", name))
+		return
+	}
+	st, err := store.Load(s.cfg.Data + "/" + name + ".jsonl")
+	if err != nil {
+		s.mu.Unlock()
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	lc := ListConfig{Name: name, Title: title, Mesh: mesh}
+	s.cfg.Lists = append(s.cfg.Lists, lc)
+	if err := s.cfg.Save(s.cfgPath); err != nil {
+		s.cfg.Lists = s.cfg.Lists[:len(s.cfg.Lists)-1]
+		s.mu.Unlock()
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	l := &list{conf: lc, store: st}
+	s.lists[name] = l
+	s.mu.Unlock()
+	s.log.Info("list created", "list", name, "mesh", mesh, "by", by)
+	writeJSON(w, http.StatusCreated, info(l))
+}
+
+// Meshes is the meshes this service's lists are on, as they are now: a list
+// made through the API can be on one the service did not serve at start.
+func (s *Server) Meshes() map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]bool{}
+	for _, l := range s.lists {
+		out[l.conf.Mesh] = true
+	}
+	return out
+}
+
+// plain is a letter without its accent, for names: titles here are often
+// Czech ("Nákup" is nakup, not n-kup).
+var plain = strings.NewReplacer(
+	"á", "a", "ä", "a", "à", "a", "â", "a", "å", "a", "č", "c", "ç", "c", "ď", "d", "é", "e", "ě", "e", "è", "e",
+	"ê", "e", "ë", "e", "í", "i", "ì", "i", "î", "i", "ï", "i", "ľ", "l", "ĺ", "l", "ł", "l", "ň", "n", "ñ", "n",
+	"ó", "o", "ö", "o", "ô", "o", "ò", "o", "ø", "o", "ř", "r", "ŕ", "r", "š", "s", "ś", "s", "ß", "ss", "ť", "t",
+	"ú", "u", "ů", "u", "ü", "u", "ù", "u", "û", "u", "ý", "y", "ÿ", "y", "ž", "z", "ź", "z", "ż", "z")
+
+// slug makes a list's name from its title: "Weekend trip" is weekend-trip.
+func slug(title string) string {
+	var b strings.Builder
+	dash := false
+letters:
+	for _, c := range plain.Replace(strings.ToLower(title)) {
+		switch {
+		case c >= 'a' && c <= 'z' || c >= '0' && c <= '9':
+			b.WriteRune(c)
+			dash = false
+		case b.Len() > 0 && !dash:
+			b.WriteByte('-')
+			dash = true
+		}
+		if b.Len() >= 32 {
+			break letters
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func (s *Server) getList(w http.ResponseWriter, r *http.Request, l *list, _ string) {
