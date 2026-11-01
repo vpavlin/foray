@@ -151,29 +151,69 @@ func serve(args []string) error {
 	for _, l := range cfg.Lists {
 		want[l.Mesh] = true
 	}
-	type listener struct {
-		ln    net.Listener
-		mesh  string
-		local bool
+	h := srv.Handler()
+	var srvMu sync.Mutex
+	var servers []*http.Server
+	start := func(ln net.Listener, mesh string, local bool) *http.Server {
+		hs := &http.Server{Handler: h, ConnContext: server.ConnContext(mesh, local), ReadHeaderTimeout: 10 * time.Second}
+		srvMu.Lock()
+		servers = append(servers, hs)
+		srvMu.Unlock()
+		log.Info("serving", "on", ln.Addr().String(), "mesh", mesh)
+		go hs.Serve(ln)
+		return hs
 	}
-	var lns []listener
-	for m := range want {
-		a, ok := addrs[m]
-		if !ok {
-			log.Warn("this machine is not on a list's mesh; that list is served on loopback only", "mesh", m)
-			continue
-		}
-		ln, err := net.Listen("tcp", netip.AddrPortFrom(a, uint16(cfg.Port)).String())
-		if err != nil {
-			return fmt.Errorf("mesh %s: %w", m, err)
-		}
-		lns = append(lns, listener{ln, m, false})
+
+	// Each list's mesh, on this machine's address there, opened as soon as the
+	// daemon reports it and moved if the address changes. Opened only at start
+	// before: proteus's nightly reboot on 2026-11-01 started Foray before the
+	// shrooms daemon answered, every list was served on loopback all morning,
+	// and a phone's new items stayed "only on this device".
+	type onMesh struct {
+		addr netip.Addr
+		hs   *http.Server
 	}
+	meshSrv := map[string]onMesh{}
+	warned := map[string]bool{}
+	listen := func(addrs map[string]netip.Addr) (missing bool) {
+		for m := range want {
+			a, ok := addrs[m]
+			cur, have := meshSrv[m]
+			if have && (!ok || cur.addr != a) {
+				log.Info("this machine's address on a list's mesh changed; moving", "mesh", m, "was", cur.addr)
+				cur.hs.Close()
+				delete(meshSrv, m)
+				have = false
+			}
+			if !ok {
+				if !warned[m] {
+					log.Warn("this machine is not on a list's mesh yet; that list is served on loopback until it is", "mesh", m)
+					warned[m] = true
+				}
+				missing = true
+				continue
+			}
+			if have {
+				continue
+			}
+			ln, err := net.Listen("tcp", netip.AddrPortFrom(a, uint16(cfg.Port)).String())
+			if err != nil {
+				log.Warn("cannot listen on a list's mesh yet", "mesh", m, "err", err)
+				missing = true
+				continue
+			}
+			meshSrv[m] = onMesh{a, start(ln, m, false)}
+			warned[m] = false
+		}
+		return missing
+	}
+	missing := listen(addrs)
+
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Port))
 	if err != nil {
 		return err
 	}
-	lns = append(lns, listener{ln, "", true})
+	start(ln, "", true)
 	// Each list's own socket, in its session's directory, for a caged session.
 	for _, l := range cfg.Lists {
 		if l.Socket == "" {
@@ -186,36 +226,37 @@ func serve(args []string) error {
 			return fmt.Errorf("list %s: socket: %w", l.Name, err)
 		}
 		os.Chmod(l.Socket, 0o600)
-		lns = append(lns, listener{ul, "", true})
+		start(ul, "", true)
 	}
 
-	h := srv.Handler()
-	var servers []*http.Server
-	for _, l := range lns {
-		hs := &http.Server{Handler: h, ConnContext: server.ConnContext(l.mesh, l.local), ReadHeaderTimeout: 10 * time.Second}
-		servers = append(servers, hs)
-		log.Info("serving", "on", l.ln.Addr().String(), "mesh", l.mesh)
-		go hs.Serve(l.ln)
-	}
-
-	// The roster changes as devices come and go; names follow it.
+	// The roster changes as devices come and go; names follow it, and so do
+	// the mesh listeners. Every 10 seconds while a list's mesh is missing,
+	// every minute after.
 	go func() {
 		for {
+			wait := time.Minute
+			if missing {
+				wait = 10 * time.Second
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(time.Minute):
+			case <-time.After(wait):
 				if st, err := mesh.Fetch(cfg.Socket); err == nil {
 					names.Update(st)
+					now := st.Addresses()
 					addrMu.Lock()
-					addrs = st.Addresses()
+					addrs = now
 					addrMu.Unlock()
+					missing = listen(now)
 				}
 			}
 		}
 	}()
 
 	<-ctx.Done()
+	srvMu.Lock()
+	defer srvMu.Unlock()
 	for _, hs := range servers {
 		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		hs.Shutdown(sctx)
