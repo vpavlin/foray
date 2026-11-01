@@ -300,8 +300,16 @@ func (s *Server) createList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	if _, dup := s.lists[name]; dup {
+	if l, dup := s.lists[name]; dup {
 		s.mu.Unlock()
+		// The same list asked for again — a retry whose answer was lost, or
+		// two people starting "Nákup" at once — is that list, not a refusal:
+		// the phone sends no Idempotency-Key here, and saw "already a list"
+		// for the one it had just made.
+		if l.conf.Mesh == mesh && l.conf.Title == title {
+			writeJSON(w, http.StatusOK, info(l))
+			return
+		}
 		fail(w, http.StatusConflict, fmt.Errorf("there is a list called %q already", name))
 		return
 	}

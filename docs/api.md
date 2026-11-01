@@ -113,7 +113,7 @@ States, for the apps:
 
 | | Body | |
 |---|---|---|
-| `POST /v1/lists` | `{title, name?}`; from loopback also `{mesh}` | 201, the new list (as in `GET /v1/lists`). Made on the mesh the request came from, with no session (an assistant is set up on the machine with `scripts/setup.sh`). The name defaults to the title made lowercase ASCII with dashes ("Nákup na víkend" is `nakup-na-vikend`). 403 for a caller the mesh doesn't know, 409 if the name is taken, 400 for a bad name or another mesh. |
+| `POST /v1/lists` | `{title, name?}`; from loopback also `{mesh}` | 201, the new list (as in `GET /v1/lists`). Made on the mesh the request came from, with no session (an assistant is set up on the machine with `scripts/setup.sh`). The name defaults to the title made lowercase ASCII with dashes ("Nákup na víkend" is `nakup-na-vikend`). 403 for a caller the mesh doesn't know, the same title asked for again on the same mesh is 200 with that list (a retry, or two people at once); 409 if the name is taken otherwise, 400 for a bad name or another mesh. |
 | `POST /v1/lists/{list}/items` | `{title, notes?, due?, who?, tags?, state?}` | 201, the item. State defaults to open. The session is told. |
 | `PATCH /v1/lists/{list}/items/{id}` | any of `{title, notes, summary, state, due, who, tags}` | the item. A field left out is unchanged; `""` clears `notes`, `due` and `who`, `[]` clears `tags`; `title` cannot be emptied. |
 | `POST /v1/lists/{list}/items/{id}/comments` | `{text}` | the item. The session is told (answers to its questions arrive this way). |

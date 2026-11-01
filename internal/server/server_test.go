@@ -453,6 +453,10 @@ func TestAListIsMadeOnTheMeshAskedFrom(t *testing.T) {
 	if l, ok := again.lists["weekend-trip"]; !ok || l.conf.Mesh != "office" || len(l.store.Items()) != 1 {
 		t.Errorf("after a restart: %v", ok)
 	}
+	// Asked for again, it is the same list, not a refusal.
+	if code, again := f.call(t, f.office, "POST", "/v1/lists", map[string]any{"title": "Weekend trip!"}, nil); code != http.StatusOK || again["name"] != "weekend-trip" {
+		t.Errorf("the same list again: %d %v", code, again)
+	}
 	if m := f.s.Meshes(); !m["office"] || !m["home"] {
 		t.Errorf("meshes: %v", m)
 	}
