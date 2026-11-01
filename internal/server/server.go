@@ -80,6 +80,13 @@ type Server struct {
 	// Set by main; nil leaves helpers' settings alone.
 	Trust func(mesh, agent string, on bool) error
 
+	// Assist sets up a list's assistant on this machine (internal/assist);
+	// nil where assistants cannot be made here.
+	Assist Assistants
+	// ServeSocket starts serving the API on a list's socket, for an
+	// assistant made while the service runs.
+	ServeSocket func(path string) error
+
 	// applied is the writes answered, by Idempotency-Key (once.go).
 	applied onceCache
 }
@@ -97,6 +104,13 @@ func New(cfg *Config, cfgPath string, log *slog.Logger) (*Server, error) {
 		s.lists[lc.Name] = &list{conf: lc, store: st}
 	}
 	return s, nil
+}
+
+// Assistants is internal/assist's Setup, as the server uses it.
+type Assistants interface {
+	Folder(list string) error
+	Socket(list string) string
+	Start(list, mesh string) error
 }
 
 type ctxKey struct{}
@@ -171,6 +185,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/lists/{list}/items/{id}/help", s.withWriter(s.help))
 	mux.HandleFunc("POST /v1/lists/{list}/suggest", s.withList(s.suggest))
 	mux.HandleFunc("POST /v1/lists/{list}/allow", s.withWriter(s.allow))
+	mux.HandleFunc("POST /v1/lists/{list}/assistant", s.withList(s.giveAssistant))
 	mux.HandleFunc("POST /v1/lists/{list}/ignore", s.withWriter(s.ignore))
 	return mux
 }
@@ -206,6 +221,9 @@ type listInfo struct {
 	Session string         `json:"session"`
 	Seq     int64          `json:"seq"`
 	Counts  map[string]int `json:"counts"`
+	// AssistantError says why an assistant asked for with the list was not
+	// made; the list was.
+	AssistantError string `json:"assistant_error,omitempty"`
 }
 
 func info(l *list) listInfo {
@@ -228,7 +246,7 @@ func (s *Server) whoami(w http.ResponseWriter, r *http.Request) {
 	name := s.caller(r)
 	wh := whereOf(r)
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "mesh": wh.mesh, "local": wh.local,
-		"can_write": name != "", "machine": s.Self()})
+		"can_write": name != "", "can_assist": s.Assist != nil && s.mayAssist(r), "machine": s.Self()})
 }
 
 func (s *Server) getLists(w http.ResponseWriter, r *http.Request) {
@@ -262,8 +280,19 @@ func (s *Server) createList(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusForbidden, errors.New("the mesh does not know who you are"))
 		return
 	}
-	var a struct{ Name, Title, Mesh string }
+	var a struct {
+		Name, Title, Mesh string
+		Assistant         bool
+	}
 	if !decode(w, r, &a) {
+		return
+	}
+	if a.Assistant && !s.mayAssist(r) {
+		fail(w, http.StatusForbidden, errors.New("only the owners named on this machine may start an assistant"))
+		return
+	}
+	if a.Assistant && s.Assist == nil {
+		fail(w, http.StatusBadRequest, errors.New("this machine cannot run assistants"))
 		return
 	}
 	wh := whereOf(r)
@@ -331,7 +360,87 @@ func (s *Server) createList(w http.ResponseWriter, r *http.Request) {
 	s.lists[name] = l
 	s.mu.Unlock()
 	s.log.Info("list created", "list", name, "mesh", mesh, "by", by)
+	if a.Assistant {
+		if err := s.assistant(l, by); err != nil {
+			// The list stands; its assistant can be asked for again.
+			li := info(l)
+			li.AssistantError = err.Error()
+			writeJSON(w, http.StatusCreated, li)
+			return
+		}
+	}
 	writeJSON(w, http.StatusCreated, info(l))
+}
+
+// mayAssist: this machine, or a device the config names as an owner.
+func (s *Server) mayAssist(r *http.Request) bool {
+	if whereOf(r).local {
+		return true
+	}
+	who := s.caller(r)
+	if who == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, o := range s.cfg.Owners {
+		if o == who {
+			return true
+		}
+	}
+	return false
+}
+
+// giveAssistant gives an existing list an assistant on this machine.
+func (s *Server) giveAssistant(w http.ResponseWriter, r *http.Request, l *list, by string) {
+	if s.Assist == nil {
+		fail(w, http.StatusBadRequest, errors.New("this machine cannot run assistants"))
+		return
+	}
+	if !s.mayAssist(r) {
+		fail(w, http.StatusForbidden, errors.New("only the owners named on this machine may start an assistant"))
+		return
+	}
+	if err := s.assistant(l, by); err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info(l))
+}
+
+// assistant sets up the list's assistant on this machine: its folder, the
+// list served on a socket in it, the session (internal/assist). Run again,
+// it repairs what is missing.
+func (s *Server) assistant(l *list, by string) error {
+	name := l.conf.Name
+	if err := s.Assist.Folder(name); err != nil {
+		return fmt.Errorf("the assistant's folder: %w", err)
+	}
+	sock := s.Assist.Socket(name)
+	s.mu.Lock()
+	had := l.conf.Socket == sock
+	l.conf.Socket = sock
+	l.conf.Session = "foray-" + name
+	for i := range s.cfg.Lists {
+		if s.cfg.Lists[i].Name == name {
+			s.cfg.Lists[i].Socket, s.cfg.Lists[i].Session = sock, l.conf.Session
+		}
+	}
+	err := s.cfg.Save(s.cfgPath)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if !had && s.ServeSocket != nil {
+		if err := s.ServeSocket(sock); err != nil {
+			return fmt.Errorf("serving the list on %s: %w", sock, err)
+		}
+	}
+	if err := s.Assist.Start(name, l.conf.Mesh); err != nil {
+		return err
+	}
+	s.log.Info("assistant set up", "list", name, "session", l.conf.Session, "by", by)
+	return nil
 }
 
 // Meshes is the meshes this service's lists are on, as they are now: a list
@@ -801,6 +910,9 @@ func AgentSocket() string {
 }
 
 // selfClient reaches this machine's agent through its socket.
+// AgentClient reaches this machine's shrooms-agent through its socket.
+func AgentClient(timeout time.Duration) *http.Client { return selfClient(timeout) }
+
 func selfClient(timeout time.Duration) *http.Client {
 	sock := AgentSocket()
 	return &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {

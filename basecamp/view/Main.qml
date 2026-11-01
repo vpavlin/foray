@@ -180,6 +180,17 @@ Item {
     // mesh (POST /v1/lists): the view knows those from the lists it found.
     property bool makingList: false
     property int keeperPick: 0
+    // Whether this device may give the new list an assistant there (its
+    // owners, named on that machine), and whether it asked to.
+    property bool canAssist: false
+    property bool withAssistant: false
+    function askCanAssist() {
+        var ks = keepers()
+        if (ks.length === 0) { root.canAssist = false; return }
+        var me = call("foray_core", "get", [ks[Math.min(root.keeperPick, ks.length - 1)].address, "/v1/whoami"])
+        root.canAssist = !!(me && me.can_assist)
+        if (!root.canAssist) root.withAssistant = false
+    }
     function keepers() {
         var seen = {}, out = []
         for (var i = 0; i < lists.length; i++) {
@@ -194,9 +205,11 @@ Item {
         var ks = keepers()
         if (ks.length === 0 || String(title).trim() === "") return
         var k = ks[Math.min(root.keeperPick, ks.length - 1)]
-        var d = call("foray_core", "send", [k.address, "POST", "/v1/lists", JSON.stringify({ title: String(title).trim() })])
+        var d = call("foray_core", "send", [k.address, "POST", "/v1/lists",
+                                            JSON.stringify({ title: String(title).trim(), assistant: root.canAssist && root.withAssistant })])
         if (!d || d.error) { root.said = d ? d.error : "no answer"; return }
-        root.said = ""
+        // The list was made; its assistant may not have been.
+        root.said = d.assistant_error ? "The list is there, its assistant is not: " + d.assistant_error : ""
         root.makingList = false
         newListTitle.text = ""
         var made = { key: k.address + "/" + d.name, address: k.address, machine: k.machine, mesh: d.mesh || k.mesh,
@@ -589,7 +602,7 @@ Item {
                 visible: root.lists.length > 0 && !root.makingList
                 text: "+ new list"
                 color: cSky; font.pixelSize: 12
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.keeperPick = 0; root.makingList = true; newListTitle.forceActiveFocus() } }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.keeperPick = 0; root.withAssistant = false; root.makingList = true; root.askCanAssist(); newListTitle.forceActiveFocus() } }
             }
             ColumnLayout {
                 visible: root.makingList
@@ -615,8 +628,14 @@ Item {
                     delegate: Text {
                         text: (index === root.keeperPick ? "● " : "○ ") + modelData.mesh + " · " + modelData.machine
                         color: index === root.keeperPick ? cBone : cAsh; font.pixelSize: 11
-                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.keeperPick = index }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.keeperPick = index; root.askCanAssist() } }
                     }
+                }
+                Text {
+                    visible: root.canAssist
+                    text: (root.withAssistant ? "☑ " : "☐ ") + "with an assistant"
+                    color: root.withAssistant ? cBone : cAsh; font.pixelSize: 12
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.withAssistant = !root.withAssistant }
                 }
                 RowLayout {
                     Text {
@@ -632,7 +651,7 @@ Item {
                 }
                 Text { visible: root.said !== ""; text: root.said; color: cRust; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                 Text {
-                    text: "Everyone on " + (root.keepers().length ? root.keepers()[Math.min(root.keeperPick, root.keepers().length - 1)].mesh : "the mesh") + " will see it. An assistant for it is set up on its machine."
+                    text: "Everyone on " + (root.keepers().length ? root.keepers()[Math.min(root.keeperPick, root.keepers().length - 1)].mesh : "the mesh") + " will see it." + (root.withAssistant ? " Its assistant runs on " + (root.keepers().length ? root.keepers()[Math.min(root.keeperPick, root.keepers().length - 1)].machine : "its machine") + " and uses the model budget." : "")
                     color: cAsh; font.pixelSize: 10; wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                 }

@@ -21,6 +21,10 @@ type Config struct {
 	// Data is where the lists' logs are kept.
 	Data  string       `json:"data"`
 	Lists []ListConfig `json:"lists"`
+	// Owners are the devices, by their mesh name, that may give a list an
+	// assistant from an app: an assistant spends the model budget, so not
+	// everybody on the mesh may start one. This machine always may.
+	Owners []string `json:"owners,omitempty"`
 }
 
 // ListConfig is one list.

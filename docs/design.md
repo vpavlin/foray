@@ -286,3 +286,32 @@ Chosen: **Foray**.
    Scala reminders only?
 3. **`putEvent` public:** the bridge is simpler and safer with it; ask Scala
    to ship 0.12.4 publicly before phase 3.
+
+
+## Lists and assistants from the apps (2026-11-01)
+
+A list could be made only by `scripts/setup.sh` on the machine that keeps it,
+so nobody using the apps could start one. Now:
+
+- **Anybody the mesh knows can start a list** on the mesh they are on
+  (`POST /v1/lists`), as anybody may add to one. It has no assistant.
+- **An assistant is optional, and for owners.** It spends the model budget,
+  so only the devices named in the config's `owners`, and the machine itself,
+  may ask for one: with the list (`assistant: true`) or later
+  (`POST /v1/lists/{list}/assistant`). `whoami` says `can_assist`, so the apps
+  offer it only to those who may.
+- **The service sets it up itself** (internal/assist), as setup.sh does: the
+  folder `~/foray-<list>` with `AGENTS.md`, this binary as its tools, its
+  browser (hard-linked from another assistant's, so a new one costs no
+  2.8 GB), the model of the machine's other assistants, pi's trust; the list
+  served on a socket in that folder; the session through this machine's
+  shrooms-agent, caged, limited to the list's mesh.
+- **Computer, list and assistant are separate choices.** A list is kept by
+  one computer running Foray; its assistant runs on one computer that can run
+  one. For now the assistant runs on the computer that keeps the list
+  (proteus). An assistant on another computer (k11, later) is that computer's
+  Foray setting it up when the list's asks, its tools reaching the list over
+  the mesh instead of a socket; the list then names its assistant
+  `MACHINE/SESSION`. Shrooms Agents' file upload cannot do that setup (files
+  land in an uploads folder, 0600), which is why each computer's own Foray
+  does it.

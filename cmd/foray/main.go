@@ -27,6 +27,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vpavlin/foray"
+	"github.com/vpavlin/foray/internal/assist"
 	"github.com/vpavlin/foray/internal/mcp"
 	"github.com/vpavlin/foray/internal/mesh"
 	"github.com/vpavlin/foray/internal/server"
@@ -141,6 +143,12 @@ func serve(args []string) error {
 		return a, ok
 	}
 	srv.Notify = server.AgentNotifier(srv.Addr, cfg.AgentPort, log)
+	// Assistants for lists, made here when an owner asks from an app.
+	if exe, err := os.Executable(); err == nil {
+		home, _ := os.UserHomeDir()
+		srv.Assist = &assist.Setup{Home: home, Exe: exe, AgentsMD: foray.AgentsMD, BrowserPy: foray.BrowserPy,
+			BrowserSh: foray.BrowserSh, Agent: server.AgentClient(60 * time.Second), Cage: assist.HavePodman}
+	}
 	srv.Trust = server.AgentTrust(names.Find, srv.Addr, cfg.AgentPort)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -217,19 +225,27 @@ func serve(args []string) error {
 		return err
 	}
 	start(ln, "", true)
-	// Each list's own socket, in its session's directory, for a caged session.
+	// Each list's own socket, in its session's directory, for a caged session;
+	// and one for an assistant made while the service runs.
+	serveSocket := func(path string) error {
+		os.MkdirAll(filepath.Dir(path), 0o700)
+		os.Remove(path)
+		ul, err := net.Listen("unix", path)
+		if err != nil {
+			return err
+		}
+		os.Chmod(path, 0o600)
+		start(ul, "", true)
+		return nil
+	}
+	srv.ServeSocket = serveSocket
 	for _, l := range cfg.Lists {
 		if l.Socket == "" {
 			continue
 		}
-		os.MkdirAll(filepath.Dir(l.Socket), 0o700)
-		os.Remove(l.Socket)
-		ul, err := net.Listen("unix", l.Socket)
-		if err != nil {
+		if err := serveSocket(l.Socket); err != nil {
 			return fmt.Errorf("list %s: socket: %w", l.Name, err)
 		}
-		os.Chmod(l.Socket, 0o600)
-		start(ul, "", true)
 	}
 
 	// The roster changes as devices come and go; names follow it, and so do

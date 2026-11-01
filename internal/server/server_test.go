@@ -496,3 +496,68 @@ func TestSlug(t *testing.T) {
 		}
 	}
 }
+
+type fakeAssist struct {
+	mu      sync.Mutex
+	started []string
+	dir     string
+}
+
+func (a *fakeAssist) Folder(list string) error { return nil }
+func (a *fakeAssist) Socket(list string) string {
+	return filepath.Join(a.dir, "foray-"+list, ".foray.sock")
+}
+func (a *fakeAssist) Start(list, mesh string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.started = append(a.started, list+"@"+mesh)
+	return nil
+}
+
+// An assistant is for the owners named on the machine (and the machine
+// itself); anybody else may still start a list, without one.
+func TestOnlyOwnersStartAssistants(t *testing.T) {
+	f := newFixture(t)
+	fa := &fakeAssist{dir: t.TempDir()}
+	f.s.Assist = fa
+	var served []string
+	f.s.ServeSocket = func(p string) error { served = append(served, p); return nil }
+
+	if code, _ := f.call(t, f.home, "POST", "/v1/lists", map[string]any{"title": "Garden", "assistant": true}, nil); code != http.StatusForbidden {
+		t.Fatalf("a device not named an owner started an assistant: %d", code)
+	}
+	if _, who := f.call(t, f.home, "GET", "/v1/whoami", nil, nil); who["can_assist"] != false {
+		t.Errorf("whoami offers assistants to a non-owner: %v", who)
+	}
+	f.s.cfg.Owners = []string{"phone.home"}
+	if _, who := f.call(t, f.home, "GET", "/v1/whoami", nil, nil); who["can_assist"] != true {
+		t.Errorf("whoami: %v", who)
+	}
+	code, out := f.call(t, f.home, "POST", "/v1/lists", map[string]any{"title": "Garden", "assistant": true}, nil)
+	if code != http.StatusCreated || out["session"] != "foray-garden" {
+		t.Fatalf("an owner's list with an assistant: %d %v", code, out)
+	}
+	if len(fa.started) != 1 || fa.started[0] != "garden@home" || len(served) != 1 || served[0] != fa.Socket("garden") {
+		t.Errorf("started %v, served %v", fa.started, served)
+	}
+	cfg, _ := LoadConfig(f.cfgPath)
+	var got ListConfig
+	for _, l := range cfg.Lists {
+		if l.Name == "garden" {
+			got = l
+		}
+	}
+	if got.Session != "foray-garden" || got.Socket != fa.Socket("garden") {
+		t.Errorf("saved: %+v", got)
+	}
+
+	// An existing list, given one later; from loopback, without being named.
+	f.call(t, f.office, "POST", "/v1/lists", map[string]any{"title": "House"}, nil)
+	f.s.cfg.Owners = nil
+	if code, _ := f.call(t, f.office, "POST", "/v1/lists/house/assistant", nil, nil); code != http.StatusForbidden {
+		t.Errorf("a non-owner gave a list an assistant: %d", code)
+	}
+	if code, out := f.call(t, f.local, "POST", "/v1/lists/house/assistant", nil, nil); code != http.StatusOK || out["session"] != "foray-house" {
+		t.Errorf("this machine giving House an assistant: %d %v", code, out)
+	}
+}

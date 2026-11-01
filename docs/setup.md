@@ -105,3 +105,15 @@ foray suggest --list home --to SERVER "renew the domain" --why "it lapses on the
 
 `SERVER` is the machine that keeps the list, by its mesh name or address. It
 lands as a suggestion; the list's session decides on it.
+
+## Assistants from the apps
+
+Who may give a list an assistant from an app is named in the config, by the
+devices' mesh names (this machine always may):
+
+```json
+"owners": ["nothing", "laptop"]
+```
+
+The service then sets the assistant up itself, as `setup.sh` would, on this
+machine (docs/design.md).
